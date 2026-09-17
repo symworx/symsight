@@ -11,9 +11,9 @@ version = "0.2.2"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-authors = ["PalEm Dynamics LLC"]
-repository = "https://github.com/csymd/symsight"
-homepage = "https://github.com/csymd/symsight"
+authors = ["Nathaniel T. Berry"]
+repository = "https://github.com/symworx/symsight"
+homepage = "https://github.com/symworx/symsight"
 description = "Insight generator: articles and social posts with CLI and TUI"
 
 [workspace.dependencies]

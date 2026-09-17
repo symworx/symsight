@@ -7,7 +7,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE.md"]
 requires-python = ">=3.11"
 authors = [
-    { name = "PalEm Dynamics LLC" },
+    { name = "Nathaniel T. Berry" },
 ]
 keywords = [
     "content-generation",
@@ -53,10 +53,10 @@ dev = [
 symsight = "symsight.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/csymd/symsight"
-Repository = "https://github.com/csymd/symsight"
-Issues = "https://github.com/csymd/symsight/issues"
-Changelog = "https://github.com/csymd/symsight/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/symworx/symsight"
+Repository = "https://github.com/symworx/symsight"
+Issues = "https://github.com/symworx/symsight/issues"
+Changelog = "https://github.com/symworx/symsight/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["maturin>=1.8,<2.0"]
