@@ -14,7 +14,7 @@ Security fixes are applied on a best-effort basis to the latest release on the d
 **Do not open a public GitHub issue for security-sensitive reports.**
 
 Please report vulnerabilities privately via **GitHub Security Advisories** —
-use [Report a vulnerability](https://github.com/csymd/symsight/security/advisories/new)
+use [Report a vulnerability](https://github.com/symworx/symsight/security/advisories/new)
 on this repository.
 
 Private vulnerability reporting is the preferred channel once the repository is

@@ -171,7 +171,7 @@ git push -u origin stage
 
 ### Repository rulesets (once the repo is public)
 
-GitHub Free does not allow rulesets on private repositories. After making `csymd/symsight` public, apply the same rulesets as SymWorx / SymKit (org-admin bypass, so `git push --admin` still works):
+GitHub Free does not allow rulesets on private repositories. After making `symworx/symsight` public, apply the same rulesets as SymWorx / SymKit (org-admin bypass, so `git push --admin` still works):
 
 ```bash
 ./scripts/apply-github-rulesets.py

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026, PalEm Dynamics LLC
+# Copyright (c) 2026, Nathaniel T. Berry
 # Licensed under the Apache License, Version 2.0.
 #
 # Bump the shared SymSight workspace version in lockstep.
@@ -321,7 +321,7 @@ bump_changelog_links() {
   awk -v new="$new" '
     BEGIN { inserted = 0 }
     /^\[[0-9]/ && !inserted {
-      print "[" new "]: https://github.com/csymd/symsight/releases/tag/v" new
+      print "[" new "]: https://github.com/symworx/symsight/releases/tag/v" new
       inserted = 1
     }
     { print }
