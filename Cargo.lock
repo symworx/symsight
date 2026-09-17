@@ -1174,7 +1174,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "symsight-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "clap",
  "symsight-core",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "symsight-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "dirs",
@@ -1199,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "symsight-py"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "indexmap",
  "pyo3",
