@@ -7,13 +7,13 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-authors = ["PalEm Dynamics LLC"]
-repository = "https://github.com/csymd/symsight"
-homepage = "https://github.com/csymd/symsight"
+authors = ["Nathaniel T. Berry"]
+repository = "https://github.com/symworx/symsight"
+homepage = "https://github.com/symworx/symsight"
 description = "Insight generator: articles and social posts with CLI and TUI"
 
 [workspace.dependencies]
@@ -33,4 +33,4 @@ toml = { version = "0.8", features = ["parse", "display"] }
 
 # Internal crates — path for monorepo builds
 # Members use `{ workspace = true }`.
-symsight-core = { path = "crates/symsight-core", version = "0.2.2" }
+symsight-core = { path = "crates/symsight-core", version = "0.2.3" }

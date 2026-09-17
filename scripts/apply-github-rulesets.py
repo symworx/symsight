@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026, PalEm Dynamics LLC
+# Copyright (c) 2026, Nathaniel T. Berry
 # Licensed under the Apache License, Version 2.0.
 """Create or update repository rulesets.
 
@@ -19,7 +19,7 @@ import json
 import subprocess
 import sys
 
-REPO = "csymd/symsight"
+REPO = "symworx/symsight"
 
 BYPASS = [
     {
