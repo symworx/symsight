@@ -19,7 +19,7 @@ import json
 import subprocess
 import sys
 
-REPO = "csymd/symsight"
+REPO = "symworx/symsight"
 
 BYPASS = [
     {

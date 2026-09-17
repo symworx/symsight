@@ -321,7 +321,7 @@ bump_changelog_links() {
   awk -v new="$new" '
     BEGIN { inserted = 0 }
     /^\[[0-9]/ && !inserted {
-      print "[" new "]: https://github.com/csymd/symsight/releases/tag/v" new
+      print "[" new "]: https://github.com/symworx/symsight/releases/tag/v" new
       inserted = 1
     }
     { print }

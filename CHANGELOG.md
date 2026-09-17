@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Copyright holder updated to Nathaniel T. Berry
+- Repository URLs updated from `github.com/csymd` to `github.com/symworx`
 
 ## [0.2.2] - 2026-08-28
 
@@ -43,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Day-to-day CI runs on `develop` only; Release validation runs on PRs into `main`, pushes to `release/**`, and tags `v*` (no second full run on push to `main`)
 - Canonical rustfmt in CI is nightly (stable toolchain still builds)
 - CI job ids match family develop checks: `fmt`, `rust-checks`, `python-bindings`
-- Package, SECURITY, and changelog URLs use `github.com/csymd/symsight`
+- Package, SECURITY, and changelog URLs use `github.com/symworx/symsight`
 - `uv run symsight` with no subcommand prints help (was an argparse error)
 
 ### Removed
@@ -84,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version Links
 
-[0.2.2]: https://github.com/csymd/symsight/releases/tag/v0.2.2
-[0.2.1]: https://github.com/csymd/symsight/releases/tag/v0.2.1
-[0.2.0]: https://github.com/csymd/symsight/releases/tag/v0.2.0
-[0.1.0]: https://github.com/csymd/symsight/releases/tag/v0.1.0
+[0.2.2]: https://github.com/symworx/symsight/releases/tag/v0.2.2
+[0.2.1]: https://github.com/symworx/symsight/releases/tag/v0.2.1
+[0.2.0]: https://github.com/symworx/symsight/releases/tag/v0.2.0
+[0.1.0]: https://github.com/symworx/symsight/releases/tag/v0.1.0
