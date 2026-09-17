@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Copyright holder updated to Nathaniel Berry
+- Copyright holder updated to Nathaniel T. Berry
 
 ## [0.2.2] - 2026-08-28
 

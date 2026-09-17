@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026, Nathaniel Berry
+# Copyright (c) 2026, Nathaniel T. Berry
 # Licensed under the Apache License, Version 2.0.
 #
 # Bump the shared SymSight workspace version in lockstep.

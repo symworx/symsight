@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Nathaniel Berry
+// Copyright (c) 2026, Nathaniel T. Berry
 // Licensed under the Apache License, Version 2.0.
 
 //! System / user / rewrite prompts (`src/symsight/prompts.py`).

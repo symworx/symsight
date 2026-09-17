@@ -126,7 +126,7 @@ Details: [DEVELOPMENT.md](DEVELOPMENT.md) · [CHANGELOG.md](CHANGELOG.md) · [CO
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
 
-Copyright (c) 2026, Nathaniel Berry.
+Copyright (c) 2026, Nathaniel T. Berry.
 
 ## Notes
 

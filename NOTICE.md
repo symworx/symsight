@@ -1,6 +1,6 @@
 # NOTICE
 
-Copyright (c) 2026, Nathaniel Berry
+Copyright (c) 2026, Nathaniel T. Berry
 
 This product (symsight) is licensed under the Apache License, Version 2.0.
 See the [LICENSE](LICENSE) file in this repository.
