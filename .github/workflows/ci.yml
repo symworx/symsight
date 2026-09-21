@@ -1,22 +1,14 @@
-# Day-to-day CI for symsight (Python / uv + Rust workspace).
-#
-# Branch model (same as SymWorx / SymKit):
-#   develop → stage → release/vX.Y.Z → main → manual tag vX.Y.Z
-#
-# Day-to-day CI on develop only. stage/main are FF promotions of that SHA.
-# Tag / release.yml re-runs the full gate before publish.
-# workflow_dispatch re-runs this gate on a branch (checks only; no publish).
-#
-# Job ids match family develop required checks (no `name:` so GitHub
-# reports fmt / rust-checks / python-bindings).
+# Day-to-day CI.
+# SymWorx org standard (default branch `worx`).
+# See DEVELOPMENT.md for additional information
 
 name: CI
 
 on:
   push:
-    branches: [develop]
+    branches: [worx, develop]
   pull_request:
-    branches: [develop]
+    branches: [worx, develop]
   workflow_dispatch:
 
 concurrency:

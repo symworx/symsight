@@ -39,12 +39,12 @@
 #   1. Set the number only in root Cargo.toml [workspace.package] version
 #   2. ./scripts/bump-version.sh sync
 #
-# Safe workflow (bump is a develop chore, not a release-cycle step):
-#   1. On develop:
+# Safe workflow (bump is a worx chore, then tag):
+#   1. On worx:
 #        ./scripts/bump-version.sh patch --dry-run
 #        ./scripts/bump-version.sh patch --changelog
-#   2. Fill in CHANGELOG.md, commit, PR → develop
-#   3. Then the release cycle: FF stage → release/vX.Y.Z → main → tag
+#   2. Fill in CHANGELOG.md, commit, PR → worx
+#   3. After merge: git tag -a vX.Y.Z && git push origin vX.Y.Z
 #      (Release workflow builds artifacts + GitHub Release; PyPI paused)
 #   CI runs this script with no args as a check only (does not bump).
 #

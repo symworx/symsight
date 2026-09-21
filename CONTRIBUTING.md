@@ -14,9 +14,9 @@ AI tools are fine. You remain responsible for the result: explain the change, ke
 
 1. Fork/clone the repository.
 2. Set up the environment (see [DEVELOPMENT.md](DEVELOPMENT.md)).
-3. Branch from **`develop`** (`git checkout -b feature/your-feature-name`).
+3. Branch from **`worx`** (`git checkout -b feature/your-feature-name`).
 4. Make changes; run `uv run pytest`, `cargo test --workspace`, and `uv run ruff check src tests`. Need Rust 1.85+ (`uv sync` builds the native extension).
-5. Open a PR into **`develop`** (day-to-day work) unless you are preparing a release.
+5. Open a PR into **`worx`**.
 
 ## Pull requests
 
@@ -27,11 +27,13 @@ AI tools are fine. You remain responsible for the result: explain the change, ke
 
 ## Release path
 
-Do **not** open feature PRs straight to `main`. Releases follow the same cycle as SymWorx:
+This repository follows the **SymWorx org standard** (GitHub Flow). Feature PRs go to **`worx`**. A release is a version bump + changelog on `worx`, then a **manual** tag `vX.Y.Z`:
 
-`develop` → `stage` (FF) → `release/vX.Y.Z` → PR to `main` → merge → **manual** tag `vX.Y.Z`
+```text
+feature/*  ──PR──►  worx  ──tag──►  vX.Y.Z
+```
 
-Details: [DEVELOPMENT.md](DEVELOPMENT.md#branch-model).
+Until GitHub renames the default branch, PRs still target **`develop`**. Details: [DEVELOPMENT.md](DEVELOPMENT.md#branch-model).
 
 ## Security
 

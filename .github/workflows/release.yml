@@ -1,21 +1,19 @@
-# Release validation + publish (same branch model as SymWorx / SymKit).
+# Release validation + publish.
+# SymWorx org standard (default branch `worx`).
+# See DEVELOPMENT.md for additional information.
 #
-# Branch model:
-#   develop → stage → release/vX.Y.Z → main → manual tag vX.Y.Z
+# GitHub Flow:
+#   feature/* ──PR──► worx ──tag──► vX.Y.Z
+# Optional freeze: push to release/** then PR back to worx.
 #
-# Validation (meta, ruff, pytest, rust, manylinux wheel, native binary) runs on:
-#   - PRs into main
+# Validation (meta, fmt, clippy/tests, Python + wheel smoke) runs on:
+#   - PRs into main (legacy freeze PRs during cutover)
 #   - pushes to release/**
 #   - tags v*
 #   - workflow_dispatch (checks only; does not publish)
 #
-# Push to main is not a trigger: the PR into main already ran this workflow.
-#
-# Publish (GitHub Release with manylinux wheel/sdist + linux x86_64 binary)
-# runs only on tags v*, after validation succeeds. Create tags manually after
-# merging release/* → main.
-#
-# PyPI publish is paused until a trusted publisher is configured.
+# Publish (crates.io, PyPI, GitHub Release) runs only on tags v*, after
+# validation succeeds. Create tags manually on worx.
 
 name: Release
 
@@ -101,23 +99,30 @@ jobs:
               echo "::error::Tag v${TAG_VERSION} does not match Cargo.toml workspace version ${PKG_VERSION}"
               exit 1
             fi
-            # Final releases should land on main; pre-releases may come from stage.
+            # Final releases should land on worx; develop/main remain valid during the rename.
             if [[ "${IS_PRERELEASE}" != "true" ]]; then
-              git fetch --no-tags origin main:refs/remotes/origin/main 2>/dev/null || true
-              if git rev-parse --verify origin/main >/dev/null 2>&1; then
-                if git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
-                  echo "Tag commit is on main (or an ancestor of main)."
+              trunk=""
+              for b in worx develop main; do
+                git fetch --no-tags origin "$b:refs/remotes/origin/$b" 2>/dev/null || true
+                if git rev-parse --verify "origin/$b" >/dev/null 2>&1; then
+                  trunk=$b
+                  break
+                fi
+              done
+              if [[ -n "${trunk}" ]]; then
+                if git merge-base --is-ancestor HEAD "origin/${trunk}" 2>/dev/null; then
+                  echo "Tag commit is on ${trunk} (or an ancestor of ${trunk})."
                 else
-                  echo "::warning::Tag v${TAG_VERSION} is not an ancestor of main. Final releases should be cut after merging release/* → main."
+                  echo "::warning::Tag v${TAG_VERSION} is not an ancestor of ${trunk}. Final releases should be tagged on worx."
                 fi
               else
-                echo "::warning::Branch 'main' does not exist yet; skipping main-ancestor check for tag v${TAG_VERSION}."
+                echo "::warning::No trunk branch (worx/develop/main) found; skipping ancestor check for tag v${TAG_VERSION}."
               fi
             fi
           fi
 
           # CHANGELOG: require a heading for this version (final and pre-release tags,
-          # and release/* branches). Keep Unreleased PRs to main flexible.
+          # and release/* branches). Keep Unreleased PRs to worx flexible.
           if [[ "${IS_TAG}" == "true" || "${BRANCH_REF}" == release/* ]]; then
             if ! grep -Eq "^## \[${PKG_VERSION}\]" CHANGELOG.md; then
               echo "::error::CHANGELOG.md missing '## [${PKG_VERSION}]' section for this release"

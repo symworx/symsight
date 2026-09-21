@@ -8,9 +8,10 @@ the repository is public (or on a plan that allows private rulesets):
 
     ./scripts/apply-github-rulesets.py
 
-Organization admins bypass (git push --admin / merge with admin), same as
-the family repos. Develop required checks match SymWorx job ids:
-fmt, rust-checks, python-bindings.
+Organization admins bypass (git push --admin / merge with admin).
+Default-branch required checks: fmt, rust-checks, python-bindings.
+The ruleset is still named "develop" until an org-admin pass after GitHub
+renames the default to worx.
 """
 
 from __future__ import annotations
@@ -49,7 +50,14 @@ RULESETS = [
         "enforcement": "active",
         "bypass_actors": BYPASS,
         "conditions": {
-            "ref_name": {"include": ["refs/heads/develop"], "exclude": []},
+            "ref_name": {
+                "include": [
+                    "~DEFAULT_BRANCH",
+                    "refs/heads/worx",
+                    "refs/heads/develop",
+                ],
+                "exclude": [],
+            },
         },
         "rules": [
             {"type": "deletion"},
@@ -114,6 +122,7 @@ RULESETS = [
             "ref_name": {
                 "include": ["~ALL"],
                 "exclude": [
+                    "refs/heads/worx",
                     "refs/heads/develop",
                     "refs/heads/main",
                     "refs/heads/master",
