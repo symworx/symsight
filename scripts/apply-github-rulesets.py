@@ -8,10 +8,10 @@ the repository is public (or on a plan that allows private rulesets):
 
     ./scripts/apply-github-rulesets.py
 
-Organization admins bypass (git push --admin / merge with admin), same as
-the family repos. Default-branch required checks match SymWorx job ids:
-fmt, rust-checks, python-bindings. The ruleset is still named "develop"
-until an org-admin pass after GitHub renames the default to worx.
+Organization admins bypass (git push --admin / merge with admin).
+Default-branch required checks: fmt, rust-checks, python-bindings.
+The ruleset is still named "develop" until an org-admin pass after GitHub
+renames the default to worx.
 """
 
 from __future__ import annotations

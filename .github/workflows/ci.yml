@@ -1,12 +1,13 @@
-# Day-to-day CI for symsight (Python / uv + Rust workspace).
+# Day-to-day CI for this repository (Python / uv + Rust workspace).
+# SymWorx org standard (GitHub Flow; default branch worx).
 #
-# GitHub Flow (same as SymWorx / SymKit):
+# GitHub Flow:
 #   feature/* ──PR──► worx ──tag──► vX.Y.Z
 # develop stays in the filter until GitHub renames develop → worx.
 # Tag / release.yml re-runs the full gate before publish.
 # workflow_dispatch re-runs this gate (checks only; no publish).
 #
-# Job ids match family default-branch required checks (no `name:` so GitHub
+# Job ids match this repository's required checks (no `name:` so GitHub
 # reports fmt / rust-checks / python-bindings).
 
 name: CI

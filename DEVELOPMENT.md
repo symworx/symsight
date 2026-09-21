@@ -2,7 +2,7 @@
 
 How to build, test, and release **symsight**.
 
-Branch model and release gates mirror [SymWorx](https://github.com/symworx/symworx) so both projects use the same muscle memory.
+Branching and release gates follow the **SymWorx org standard**.
 
 For agent/tooling guidelines, see [AGENTS.md](AGENTS.md). Contributors own all submitted code.
 
@@ -82,7 +82,7 @@ Version is single-sourced from `[workspace.package].version` in the root `Cargo.
 
 ## Branch model
 
-GitHub Flow, same as SymWorx. Default branch is **`worx`**.
+**SymWorx org standard** (GitHub Flow). Default branch is **`worx`**.
 
 ```
 feature/*  ──PR──►  worx  ──tag──►  vX.Y.Z
@@ -138,7 +138,7 @@ git push origin v0.2.4
 
 | Workflow | Triggers | What it does |
 |----------|----------|--------------|
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | push/PR → `worx` / `develop`; dispatch | `fmt` + `rust-checks` + `python-bindings` (same job ids as SymWorx) |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | push/PR → `worx` / `develop`; dispatch | `fmt` + `rust-checks` + `python-bindings` |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | PR → `main` (legacy); push `release/**` / tags `v*`; dispatch | Version + CHANGELOG gates, fmt, rust-checks, python-bindings, manylinux wheel, native binary; **GitHub Release + crates.io** only on tags |
 
 Release metadata enforces:
@@ -155,7 +155,7 @@ Org rulesets still name `develop` / `stage` / `main` until an admin pass after t
 ./scripts/apply-github-rulesets.py
 ```
 
-creates required checks on the default branch (`fmt`, `rust-checks`, `python-bindings`, same job ids as SymWorx), optional `release/**`, topic no-force-push, and immutable `v*` tags. Re-running the script updates them in place.
+creates required checks on the default branch (`fmt`, `rust-checks`, `python-bindings`), optional `release/**`, topic no-force-push, and immutable `v*` tags. Re-running the script updates them in place.
 
 ## Related
 

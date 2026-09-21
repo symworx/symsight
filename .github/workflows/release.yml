@@ -1,4 +1,5 @@
-# Release validation + publish (same GitHub Flow as SymWorx / SymKit).
+# Release validation + publish. SymWorx org standard
+# (GitHub Flow; default branch worx).
 #
 #   feature/* ──PR──► worx ──tag──► vX.Y.Z
 # Optional freeze: push to release/** then PR back to worx.

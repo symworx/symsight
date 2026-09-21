@@ -27,7 +27,7 @@ AI tools are fine. You remain responsible for the result: explain the change, ke
 
 ## Release path
 
-GitHub Flow, same as SymWorx. Feature PRs go to **`worx`**. A release is a version bump + changelog on `worx`, then a **manual** tag `vX.Y.Z`:
+This repository follows the **SymWorx org standard** (GitHub Flow). Feature PRs go to **`worx`**. A release is a version bump + changelog on `worx`, then a **manual** tag `vX.Y.Z`:
 
 ```text
 feature/*  ──PR──►  worx  ──tag──►  vX.Y.Z

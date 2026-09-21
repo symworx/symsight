@@ -13,11 +13,11 @@ All changes must be owned by the human contributor, who reviews and maintains th
 | `src/symsight/` | Library (CLI, TUI, Pydantic models; shims over `symsight._native`) |
 | `config/brands/` | Brand YAML (ship example only) |
 | `tests/` | Pytest (mock the LLM for unit tests) |
-| `.github/workflows/` | CI + release (GitHub Flow; tags on `worx`) |
+| `.github/workflows/` | CI + release (org-standard GitHub Flow; tags on `worx`) |
 
 ## Branch model (do not invent a different one)
 
-GitHub Flow, same as SymWorx:
+**SymWorx org standard** (GitHub Flow):
 
 1. Feature work → **`worx`** (day-to-day CI).
 2. **Manual** version bump on `worx` when a release is next (`./scripts/bump-version.sh`, changelog `## [X.Y.Z]`).
