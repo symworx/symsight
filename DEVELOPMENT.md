@@ -82,72 +82,64 @@ Version is single-sourced from `[workspace.package].version` in the root `Cargo.
 
 ## Branch model
 
-Same as SymWorx:
+GitHub Flow, same as SymWorx. Default branch is **`worx`**.
 
 ```
-feature/* ──► develop ──► stage ──► release/vX.Y.Z ──► main ──► tag vX.Y.Z
-                 │           │              │             │
-              day-to-day   FF only      validation     publish
-                 CI        (no CI)     (no bump)       on tag
+feature/*  ──PR──►  worx  ──tag──►  vX.Y.Z
+                 day-to-day CI         publish on tag
 ```
 
-Version bumps are a **`develop` chore**, not a step on `release/vX.Y.Z`. Same muscle memory as SymWorx: land the number on `develop`, then promote that SHA.
+Version bumps are a **`worx` chore**. Land the number on the default branch, then tag that SHA.
 
-1. **Feature development** → merge to `develop`  
-   Day-to-day CI (ruff + pytest + Rust fmt/clippy/test) runs on push/PR to `develop` only.
+1. **Feature development** → merge to `worx`  
+   Day-to-day CI (ruff + pytest + Rust fmt/clippy/test) runs on push/PR to `worx` (and `develop` until the GitHub rename).
 
-2. **Version bump** (manual, on `develop`, before the cycle)  
+2. **Version bump** (manual, on `worx`)  
    When the next release is `X.Y.Z`:
    - `./scripts/bump-version.sh patch --changelog` (or `minor` / `set X.Y.Z`). The script rewrites `[workspace.package] version`, the `[workspace.dependencies]` `symsight-*` path+version pin (Cargo cannot inherit `version.workspace = true` there), and `Cargo.lock` member versions. Member crates stay on `version.workspace = true` and `symsight-core = { workspace = true }`.
    - Fill in `CHANGELOG.md` under `## [X.Y.Z]` (required later by release metadata).
-   - PR into `develop`. CI must be green.
+   - PR into `worx`. CI must be green.
 
-3. **Stage / early access** → fast-forward `develop` → `stage` when you want a promotion point.  
-   Day-to-day CI does **not** run on `stage` (avoids double runs on FF). Pre-release tags (e.g. `v0.2.0-beta.1`) may be cut from here if needed.
+3. **Optional freeze**
+   - Create `release/vX.Y.Z` from `worx` only if the release needs soak or last-minute fixes.
+   - Branch name must match `[workspace.package] version` and `CHANGELOG.md` must have `## [X.Y.Z]` (`release-meta` fails otherwise).
+   - Open a PR from `release/vX.Y.Z` → `worx`.
 
-4. **Release branch** (no bump)
-   - Create `release/vX.Y.Z` from `stage` (or from `develop` if stage is not updated yet).
-   - Branch name must already match `[workspace.package] version` and `CHANGELOG.md` must have `## [X.Y.Z]` (`release-meta` fails otherwise).
-   - Open a PR from `release/vX.Y.Z` → `main`.
-
-5. **Release**
-   - Merge the PR to `main` when **Release** checks are green.
-   - **Manually** create and push the annotated tag `vX.Y.Z` on the merge commit (tags are not auto-created in CI).
+4. **Release**
+   - Merge when checks are green.
+   - **Manually** create and push the annotated tag `vX.Y.Z` on that commit (tags are not auto-created in CI).
    - Tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml): full validation, then **GitHub Release** (manylinux sdist/wheel and a linux x86_64 GNU `symsight` binary) **and** `publish-crates` (`symsight-core` then `symsight-cli` to crates.io). The two publish jobs are independent: a crates.io failure does not block the GitHub Release. **PyPI is paused** until `publish-pypi` is re-enabled.
    - crates.io needs GitHub Environment `crates-io` with secret `CARGO_REGISTRY_TOKEN`. First publish of a version can also be done by hand (`cargo publish -p symsight-core` then `-p symsight-cli`); later tags use the workflow.
 
 `./scripts/bump-version.sh` with no args is a **consistency check** (workspace pin and lockfile). Day-to-day `rust-checks` and Release `rust-checks` run it so a missed pin fails CI. It does not bump. A missing `## [X.Y.Z]` heading is reported but only **release-meta** requires it.
 
-### Example (`v0.2.1` after a develop bump)
+Until GitHub finishes renaming `develop` → `worx`, open PRs against the GitHub default (`develop`).
+
+### Example (`v0.2.4` after a worx bump)
 
 ```bash
-# Version + changelog already on develop (e.g. chore/bump-version merged).
-git checkout stage && git pull
-git merge --ff-only origin/develop
-git push origin stage
+# On worx (or develop until the rename):
+./scripts/bump-version.sh patch --changelog
+# fill CHANGELOG.md, commit, PR → worx, merge when green
 
-git checkout -b release/v0.2.1
-git push -u origin release/v0.2.1
-# open PR → main, merge when green
-
-git checkout main && git pull
-git tag -a v0.2.1 -m "v0.2.1"
-git push origin v0.2.1
+git checkout worx && git pull
+git tag -a v0.2.4 -m "v0.2.4"
+git push origin v0.2.4
 ```
 
 ### Versioning
 
 - Semantic Versioning (SemVer).
-- Pre-releases (e.g. `0.2.0-beta.1`, `0.2.0-rc.1`) may be tagged from `stage` or a release branch; mark them as prerelease in GitHub (`-` in the version).
-- Bump on `develop` first; do not bump on `release/vX.Y.Z`.
-- Final releases are cut from `release/vX.Y.Z` merged into `main`, then **manually** tagged.
+- Pre-releases (e.g. `0.2.0-beta.1`, `0.2.0-rc.1`) may be tagged from `worx`; mark them as prerelease in GitHub (`-` in the version).
+- Bump on `worx`; an optional `release/vX.Y.Z` freeze must already match the version.
+- Final releases are tagged on `worx`.
 
 ## CI / release automation
 
 | Workflow | Triggers | What it does |
 |----------|----------|--------------|
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | push/PR → `develop`; dispatch | `fmt` + `rust-checks` + `python-bindings` (same job ids as SymWorx) |
-| [`.github/workflows/release.yml`](.github/workflows/release.yml) | PR → `main`; push `release/**` / tags `v*`; dispatch | Version + CHANGELOG gates, fmt, rust-checks, python-bindings, manylinux wheel, native binary; **GitHub Release + crates.io** only on tags |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | push/PR → `worx` / `develop`; dispatch | `fmt` + `rust-checks` + `python-bindings` (same job ids as SymWorx) |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | PR → `main` (legacy); push `release/**` / tags `v*`; dispatch | Version + CHANGELOG gates, fmt, rust-checks, python-bindings, manylinux wheel, native binary; **GitHub Release + crates.io** only on tags |
 
 Release metadata enforces:
 
@@ -155,29 +147,15 @@ Release metadata enforces:
 - Tag `vX.Y.Z` matches `Cargo.toml` workspace version.
 - `CHANGELOG.md` contains `## [X.Y.Z]` for tags and `release/*` branches.
 
-## Bootstrap remote branches (once)
+### Repository rulesets
 
-If the remote only has `main` so far:
-
-```bash
-git checkout main
-git pull
-git checkout -b develop
-git push -u origin develop
-git checkout -b stage
-git push -u origin stage
-# optional: set default branch to develop in GitHub settings
-```
-
-### Repository rulesets (once the repo is public)
-
-GitHub Free does not allow rulesets on private repositories. After making `symworx/symsight` public, apply the same rulesets as SymWorx / SymKit (org-admin bypass, so `git push --admin` still works):
+Org rulesets still name `develop` / `stage` / `main` until an admin pass after the default-branch rename. The local helper:
 
 ```bash
 ./scripts/apply-github-rulesets.py
 ```
 
-That creates `develop` (requires `fmt`, `rust-checks`, `python-bindings`, same job ids as SymWorx), `stage-main`, `release-branches`, `topic-no-force-push`, and `version-tags`. Re-running the script updates them in place.
+creates required checks on the default branch (`fmt`, `rust-checks`, `python-bindings`, same job ids as SymWorx), optional `release/**`, topic no-force-push, and immutable `v*` tags. Re-running the script updates them in place.
 
 ## Related
 
