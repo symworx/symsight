@@ -45,3 +45,10 @@ formats:
     default_max_words: 500
   social:
     default_max_chars: 200
+image:
+  style: |
+    A simple diagrammatic illustration. Plain background, clear labels,
+    no logos, and no photorealistic people.
+  model: grok-imagine-image-2.0
+  aspect: "16:9"
+  quality: low

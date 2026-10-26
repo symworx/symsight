@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `symsight image` generates one image from the active brand's `image.style`. Model, aspect, and quality come from that same block unless a flag overrides them.
+
 ### Changed
 
 - GitHub Flow: default branch is `worx`; releases are tags on `worx` (no `stage` / `main` promotion).

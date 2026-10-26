@@ -40,6 +40,7 @@ Add your own (e.g. `config/brands/my-firm.yaml`) with:
 - `voice`, `full_name`, `forbidden`, `disclaimer`
 - `types` with `user_template` strings (`{today}`, `{topic}`, `{min_words}`, `{max_words}`, `{max_chars}`, `{full_name}`)
 - `formats.article` / `formats.social` defaults
+- `image.style` (and optional `image.model`, `image.aspect`, `image.quality`) for `symsight image`
 
 ```bash
 uv run symsight brands
@@ -60,6 +61,10 @@ uv run symsight finalize content/drafts/<file>.md
 
 # Forbidden-term scan (uses active brand)
 uv run symsight check
+
+# Image. Style, model, aspect, and quality come from the brand file
+# under the project root (`config/brands/`, active brand).
+uv run symsight image --prompt "two stick figures comparing a chart" --out content/images/panel.jpg
 
 # TUI
 uv run symsight tui

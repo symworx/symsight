@@ -17,6 +17,7 @@ homepage = "https://github.com/symworx/symsight"
 description = "Insight generator: articles and social posts with CLI and TUI"
 
 [workspace.dependencies]
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "6"

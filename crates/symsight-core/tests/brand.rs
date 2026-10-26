@@ -32,6 +32,10 @@ fn load_fixture_co_fields_and_type_order() {
     assert_eq!(brand.short_name, "Fixture");
     assert_eq!(brand.voice, "Neutral test voice. Plain English.\n");
     assert_eq!(brand.disclaimer, "Fixture disclaimer for tests only.\n");
+    assert!(brand.image.style.is_empty());
+    assert_eq!(brand.image.model, "grok-imagine-image-2.0");
+    assert_eq!(brand.image.aspect, "16:9");
+    assert_eq!(brand.image.quality, "low");
     assert_eq!(
         brand.forbidden,
         vec!["fixturecorp".to_string(), "fixture-corp".to_string()]
@@ -91,6 +95,9 @@ fn load_example_writer_fields_and_type_order() {
          Byline spirit: {full_name}.\n\
          Respond with ONLY the TITLE / --- / body format.\n"
     );
+    assert!(brand.image.style.contains("diagrammatic"));
+    assert_eq!(brand.image.aspect, "16:9");
+    assert_eq!(brand.image.quality, "low");
 }
 
 #[test]

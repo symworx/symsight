@@ -142,6 +142,30 @@ fn parse_other_subcommands() {
         Cli::try_parse_from(["symsight", "tui"]).unwrap().command,
         Command::Tui { .. }
     ));
+    let image = Cli::try_parse_from([
+        "symsight",
+        "image",
+        "--prompt",
+        "a panel",
+        "--out",
+        "panel.png",
+        "--aspect",
+        "1:1",
+    ])
+    .unwrap();
+    match image.command {
+        Command::Image {
+            prompt,
+            aspect,
+            quality,
+            ..
+        } => {
+            assert_eq!(prompt, "a panel");
+            assert_eq!(aspect.as_deref(), Some("1:1"));
+            assert!(quality.is_none());
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
@@ -243,4 +267,25 @@ fn execute_generate_without_key_fails() {
     ])
     .unwrap();
     assert_eq!(symsight_cli::execute(bad_brand), 1);
+}
+
+#[test]
+fn image_without_style_fails_before_the_network() {
+    let root = tmp_dir();
+    let dest = root.join("panel.png");
+    let cli = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "image",
+        "--brand-file",
+        fixture().to_str().unwrap(),
+        "--prompt",
+        "a panel",
+        "--out",
+        dest.to_str().unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(cli), 1);
+    assert!(!dest.exists());
 }

@@ -37,6 +37,15 @@ class FormatSpecs(BaseModel):
     social: SocialFormatSpec = Field(default_factory=SocialFormatSpec)
 
 
+class ImageSpec(BaseModel):
+    """Image settings from the brand file. `style` is required to generate."""
+
+    style: str = ""
+    model: str = "grok-imagine-image-2.0"
+    aspect: str = "16:9"
+    quality: str = "low"
+
+
 class Brand(BaseModel):
     """Brand identity and prompt templates — loaded only from YAML config."""
 
@@ -49,6 +58,7 @@ class Brand(BaseModel):
     disclaimer: str = ""
     types: dict[str, TypeSpec] = Field(default_factory=dict)
     formats: FormatSpecs = Field(default_factory=FormatSpecs)
+    image: ImageSpec = Field(default_factory=ImageSpec)
 
     @field_validator("short_name", mode="before")
     @classmethod

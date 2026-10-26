@@ -4,7 +4,7 @@
 //! Domain types: brands, generation requests, and drafts.
 //!
 //! Field-for-field map of `src/symsight/models.py`. On-disk brand YAML is the
-//! contract; there is no schema change.
+//! contract. `image` is optional; a brand with no block still loads.
 
 use std::path::PathBuf;
 
@@ -101,6 +101,43 @@ pub struct FormatSpecs {
     pub social: SocialFormatSpec,
 }
 
+fn default_image_model() -> String {
+    "grok-imagine-image-2.0".to_string()
+}
+
+fn default_image_aspect() -> String {
+    "16:9".to_string()
+}
+
+fn default_image_quality() -> String {
+    "low".to_string()
+}
+
+/// Image-generation settings. `style` is the only required piece of brand
+/// content; model, aspect, and quality fall back when the YAML omits them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageSpec {
+    #[serde(default)]
+    pub style: String,
+    #[serde(default = "default_image_model")]
+    pub model: String,
+    #[serde(default = "default_image_aspect")]
+    pub aspect: String,
+    #[serde(default = "default_image_quality")]
+    pub quality: String,
+}
+
+impl Default for ImageSpec {
+    fn default() -> Self {
+        Self {
+            style: String::new(),
+            model: default_image_model(),
+            aspect: default_image_aspect(),
+            quality: default_image_quality(),
+        }
+    }
+}
+
 /// Brand identity and prompt templates — loaded only from YAML config.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Brand {
@@ -119,6 +156,8 @@ pub struct Brand {
     pub types: IndexMap<String, TypeSpec>,
     #[serde(default)]
     pub formats: FormatSpecs,
+    #[serde(default)]
+    pub image: ImageSpec,
 }
 
 impl Brand {
