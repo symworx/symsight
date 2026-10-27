@@ -93,15 +93,17 @@ Hard rules:
 - Do not invent credentials, AUM, team bios, or regulatory registrations.
 - Body length: {min_w}–{max_w} words (title excluded).
 - Prefer accurate information. For time-sensitive topics use search; if data is thin, say so—do not invent figures.
+- Prefer precise, concrete language. Avoid ambiguous or hedge-filled phrases such as \"it depends\", \"various factors\", \"some people say\", \"can be useful\", \"might help\", or \"it is important to note\" unless the uncertainty is the subject and is named explicitly.
 - Do NOT narrate your process, planning, tool use, or revisions. Do NOT include footnotes, citation markers,
   or markdown links like [[1]](url) or [1](url). Weave facts into prose only.
 - Do NOT output anything before the TITLE line (no preamble).
 
-Output format — the entire response must be ONLY these three parts, nothing else:
+Output format — the entire response must be ONLY these parts, nothing else:
 
-TITLE: <short one-line title, max ~80 characters>
+TITLE: <engaging, specific one-line title that draws the reader in without hype; max ~80 characters>
 ---
-<body as markdown paragraphs only; no H1; no second TITLE line; no trailing disclaimer>
+**TL;DR:** <1–2 concrete sentences that state what happened or what the reader will accomplish. Enough for a reader to decide whether to continue. No vague language.>
+<body as markdown paragraphs only; no H1; no second TITLE line; no trailing disclaimer; the TL;DR stays at the top of the body>
 "
     )
 }
@@ -155,7 +157,7 @@ pub fn length_rewrite_prompt(
     format!(
         "Rewrite the essay below to {min_w}–{max_w} words. \
          Output ONLY this format with no preamble, no citations, no process notes:\n\
-         TITLE: <short title>\n---\n<body>\n\n\
+         TITLE: <engaging, specific one-line title>\n---\n**TL;DR:** <1–2 concrete sentences stating what happened or what the reader will accomplish>\n<body>\n\n\
          Current word count: {current_count}.\n\n\
          TITLE: {title}\n---\n{body}"
     )
