@@ -1,6 +1,7 @@
 Rewrite the essay below to 50–100 words. Output ONLY this format with no preamble, no citations, no process notes:
-TITLE: <short title>
+TITLE: <engaging, specific one-line title>
 ---
+**TL;DR:** <1–2 concrete sentences stating what happened or what the reader will accomplish>
 <body>
 
 Current word count: 2.
