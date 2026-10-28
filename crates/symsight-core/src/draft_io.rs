@@ -249,6 +249,11 @@ pub fn write_new_draft(req: WriteNewDraft<'_>) -> io::Result<PathBuf> {
             None => FrontValue::Null,
         },
     );
+    // Mark as AI-authored by SymSight for downstream indicators.
+    front.insert(
+        "authored_by".into(),
+        FrontValue::String("symsight".to_string()),
+    );
     if req.format == ContentFormat::Social {
         front.insert(
             "char_count".into(),
