@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.2.4] - 2026-10-28
+
+### Changed
+
 - GitHub Flow: default branch is `worx`; releases are tags on `worx` (no `stage` / `main` promotion).
 
 ## [0.2.3] - 2026-09-17
@@ -91,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version Links
 
+[0.2.4]: https://github.com/symworx/symsight/releases/tag/v0.2.4
 [0.2.3]: https://github.com/symworx/symsight/releases/tag/v0.2.3
 [0.2.2]: https://github.com/symworx/symsight/releases/tag/v0.2.2
 [0.2.1]: https://github.com/symworx/symsight/releases/tag/v0.2.1
