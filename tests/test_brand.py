@@ -21,6 +21,8 @@ def test_load_brand() -> None:
     assert brand.id == "fixture-co"
     assert "general" in brand.types
     assert "fixturecorp" in brand.forbidden
+    assert brand.image.style == ""
+    assert brand.image.model == "grok-imagine-image-2.0"
 
 
 def test_resolve_brand_by_id(tmp_path: Path) -> None:

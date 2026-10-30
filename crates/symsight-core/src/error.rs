@@ -72,6 +72,29 @@ pub enum FinalizeError {
     Io(#[from] std::io::Error),
 }
 
+/// Image generation failure (`symsight.image.ImageError`).
+#[derive(Debug, Error)]
+pub enum ImageError {
+    #[error("Brand '{brand_id}' has no image.style. Add an image.style block to the brand file.")]
+    MissingStyle { brand_id: String },
+    #[error("image prompt is empty")]
+    EmptyScene,
+    #[error("aspect {aspect:?} is not one of: {known}")]
+    BadAspect { aspect: String, known: String },
+    #[error("quality must be low, medium, or auto")]
+    BadQuality,
+    #[error("image API returned no image: {0}")]
+    EmptyPayload(String),
+    #[error("image API response had neither b64_json nor url")]
+    NoImage,
+    #[error("image API returned HTTP {status}: {detail}")]
+    Http { status: u16, detail: String },
+    #[error("{0}")]
+    Message(String),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+}
+
 /// Missing API key (`RuntimeError` from `AppConfig.require_api_key`).
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConfigError {

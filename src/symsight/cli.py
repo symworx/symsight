@@ -13,6 +13,7 @@ from symsight.brandcheck import scan_paths
 from symsight.config import get_config
 from symsight.finalize import FinalizeError, finalize_draft
 from symsight.generate import GenerateError, generate_and_write
+from symsight.image import ImageError, render_image
 from symsight.models import ContentFormat, GenerateRequest
 
 
@@ -74,6 +75,16 @@ def _build_parser() -> argparse.ArgumentParser:
     # brands
     b = sub.add_parser("brands", help="List configured brands")
     b.add_argument("--brands-dir", type=Path, default=None)
+
+    # image
+    image = sub.add_parser("image", help="Generate an image from the brand file's image.style")
+    image.add_argument("--prompt", required=True, help="What the panel shows")
+    image.add_argument("--out", type=Path, required=True, help="Destination image path")
+    image.add_argument("--aspect", default=None, help="Override the brand aspect ratio")
+    image.add_argument("--quality", default=None, help="Override the brand quality")
+    image.add_argument("--model", default=None, help="Override the brand image model")
+    image.add_argument("--brand", default=None, help="Brand id (default: active_brand from config)")
+    image.add_argument("--brand-file", type=Path, default=None, help="Path to brand YAML")
 
     # tui
     t = sub.add_parser("tui", help="Launch the Textual TUI")
@@ -254,6 +265,60 @@ def cmd_brands(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_image(args: argparse.Namespace) -> int:
+    overrides = {}
+    if args.brand:
+        overrides["active_brand"] = args.brand
+    cfg = get_config(root=args.config_root, overrides=overrides or None)
+
+    try:
+        brand = resolve_brand(
+            brands_dir=cfg.brands_dir,
+            brand_id=args.brand or cfg.active_brand,
+            brand_path=args.brand_file,
+        )
+    except BrandError as exc:
+        print(f"Brand error: {exc}", file=sys.stderr)
+        return 1
+
+    if not brand.image.style.strip():
+        print(
+            f"Image failed: Brand '{brand.id}' has no image.style. "
+            "Add an image.style block to the brand file.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        key = cfg.require_api_key()
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    dest = args.out if args.out.is_absolute() else cfg.project_root / args.out
+    try:
+        path = render_image(
+            brand,
+            args.prompt,
+            dest,
+            aspect=args.aspect,
+            quality=args.quality,
+            model=args.model,
+            api_key=key,
+            base_url=cfg.base_url,
+        )
+    except ImageError as exc:
+        print(f"Image failed: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        rel = path.relative_to(cfg.project_root)
+    except ValueError:
+        rel = path
+    print(f"Image written: {rel}")
+    return 0
+
+
 def cmd_tui(args: argparse.Namespace) -> int:
     overrides = {}
     if args.drafts_dir:
@@ -283,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         "finalize": cmd_finalize,
         "check": cmd_check,
         "brands": cmd_brands,
+        "image": cmd_image,
         "tui": cmd_tui,
     }
     return handlers[args.command](args)

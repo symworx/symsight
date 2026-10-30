@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use symsight_core::{
-    finalize_draft, generate_and_write, get_config, list_brands, resolve_brand, scan_paths,
-    ConfigOverrides, ContentFormat, GenerateRequest,
+    finalize_draft, generate_and_write, get_config, list_brands, prepare_image_request,
+    render_image_with_xai, resolve_brand, scan_paths, ConfigOverrides, ContentFormat,
+    GenerateRequest, ImageOverrides,
 };
 
 #[derive(Debug, Parser)]
@@ -113,6 +114,30 @@ pub enum Command {
         #[arg(long)]
         brands_dir: Option<PathBuf>,
     },
+    /// Generate an image from the brand file's image.style
+    Image {
+        /// What the panel shows
+        #[arg(long)]
+        prompt: String,
+        /// Destination image path
+        #[arg(long)]
+        out: PathBuf,
+        /// Override the brand aspect ratio
+        #[arg(long)]
+        aspect: Option<String>,
+        /// Override the brand quality (low, medium, auto)
+        #[arg(long)]
+        quality: Option<String>,
+        /// Override the brand image model
+        #[arg(long)]
+        model: Option<String>,
+        /// Brand id (default: active_brand from config)
+        #[arg(long)]
+        brand: Option<String>,
+        /// Path to brand YAML
+        #[arg(long)]
+        brand_file: Option<PathBuf>,
+    },
     /// Launch the Textual TUI
     Tui {
         #[arg(long)]
@@ -142,6 +167,7 @@ pub fn execute(cli: Cli) -> i32 {
         Command::Finalize { .. } => cmd_finalize(&cli),
         Command::Check { .. } => cmd_check(&cli),
         Command::Brands { .. } => cmd_brands(&cli),
+        Command::Image { .. } => cmd_image(&cli),
         Command::Tui { .. } => cmd_tui(),
     }
 }
@@ -400,6 +426,81 @@ fn cmd_brands(cli: &Cli) -> i32 {
         let active = if b.id == cfg.active_brand { " *" } else { "" };
         println!("{}{active}: {}  types=[{types}]", b.id, b.display_name);
     }
+    0
+}
+
+fn cmd_image(cli: &Cli) -> i32 {
+    let Command::Image {
+        prompt,
+        out,
+        aspect,
+        quality,
+        model,
+        brand,
+        brand_file,
+    } = &cli.command
+    else {
+        unreachable!();
+    };
+
+    let mut overrides = ConfigOverrides::default();
+    if let Some(b) = brand {
+        overrides.active_brand = Some(b.clone());
+    }
+    let cfg = get_config(cli.config_root.as_deref(), Some(&overrides));
+    let brand = match resolve_brand(
+        &cfg.brands_dir,
+        brand.as_deref().or(Some(cfg.active_brand.as_str())),
+        brand_file.as_deref(),
+    ) {
+        Ok(b) => b,
+        Err(exc) => {
+            eprintln!("Brand error: {exc}");
+            return 1;
+        }
+    };
+    if let Err(exc) = prepare_image_request(
+        &brand,
+        prompt,
+        aspect.as_deref(),
+        quality.as_deref(),
+        model.as_deref(),
+    ) {
+        eprintln!("Image failed: {exc}");
+        return 1;
+    }
+    let key = match cfg.require_api_key() {
+        Ok(key) => key,
+        Err(exc) => {
+            eprintln!("{exc}");
+            return 1;
+        }
+    };
+    let dest = if out.is_absolute() {
+        out.clone()
+    } else {
+        cfg.project_root.join(out)
+    };
+    let path = match render_image_with_xai(
+        &brand,
+        prompt,
+        &dest,
+        ImageOverrides {
+            aspect: aspect.as_deref(),
+            quality: quality.as_deref(),
+            model: model.as_deref(),
+        },
+        &key,
+        &cfg.base_url,
+    ) {
+        Ok(path) => path,
+        Err(exc) => {
+            eprintln!("Image failed: {exc}");
+            return 1;
+        }
+    };
+    let rel = relative_to(&path, &cfg.project_root);
+    println!("Image written: {}", rel.display());
     0
 }
 

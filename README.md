@@ -68,6 +68,10 @@ uv run symsight finalize content/drafts/<file>.md
 # Forbidden-term scan (uses active brand)
 uv run symsight check
 
+# Image. Style, model, aspect, and quality come from the brand file
+# under the project root (`config/brands/`, active brand).
+uv run symsight image --prompt "two stick figures comparing a chart" --out content/images/panel.jpg
+
 # TUI
 uv run symsight tui
 ```

@@ -15,6 +15,7 @@ def test_no_subcommand_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([]) == 0
     out = capsys.readouterr().out
     assert "generate" in out
+    assert "image" in out
     assert "tui" in out
 
 
