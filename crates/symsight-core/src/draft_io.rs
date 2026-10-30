@@ -249,6 +249,15 @@ pub fn write_new_draft(req: WriteNewDraft<'_>) -> io::Result<PathBuf> {
             None => FrontValue::Null,
         },
     );
+    if let Some(tone) = req
+        .meta
+        .tone
+        .as_deref()
+        .map(str::trim)
+        .filter(|tone| !tone.is_empty())
+    {
+        front.insert("tone".into(), FrontValue::String(tone.to_string()));
+    }
     // Mark as AI-authored by SymSight for downstream indicators.
     front.insert(
         "authored_by".into(),

@@ -47,6 +47,13 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--search", action="store_true", default=None, help="Force web_search on")
     g.add_argument("--no-search", action="store_true", help="Disable web_search")
     g.add_argument("--model", default=None, help="Override model id")
+    g.add_argument(
+        "--tone",
+        "--voice",
+        dest="tone",
+        default=None,
+        help="Tone id from the brand (alias: --voice). Default: brand default_tone",
+    )
     g.add_argument("--drafts-dir", type=Path, default=None)
 
     # finalize
@@ -125,9 +132,18 @@ def cmd_generate(args: argparse.Namespace) -> int:
         max_chars=args.max_chars,
         use_search=_resolve_use_search(args),
         model=args.model,
+        tone=args.tone,
     )
+    try:
+        selected = req.resolved_tone()
+    except ValueError as exc:
+        print(f"Generation failed: {exc}", file=sys.stderr)
+        return 1
+    if not (args.tone or "").strip() and selected is not None:
+        print(f"Using default tone: {selected[0]}", file=sys.stderr)
+    tone_label = f", tone {selected[0]}" if selected is not None else ""
 
-    print(f"Generating {fmt.value} ({type_id}) for {brand.display_name}…")
+    print(f"Generating {fmt.value} ({type_id}{tone_label}) for {brand.display_name}…")
     try:
         path = generate_and_write(req, cfg)
     except (GenerateError, RuntimeError, ValueError) as exc:

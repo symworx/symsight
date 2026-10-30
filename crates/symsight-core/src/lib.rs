@@ -38,9 +38,9 @@ pub use llm::{
 };
 pub use models::{
     ArticleFormatSpec, Brand, ContentFormat, Draft, DraftMeta, FormatSpecs, FrontValue,
-    GenerateRequest, SocialFormatSpec, TypeSpec,
+    GenerateRequest, SocialFormatSpec, ToneSpec, TypeSpec,
 };
-pub use prompts::{length_rewrite_prompt, safe_format, system_prompt, user_prompt};
+pub use prompts::{length_rewrite_prompt, safe_format, system_prompt, user_prompt, utc_today};
 pub use textutil::{
     char_count, clean_body, extract_social_text, extract_title_body, is_plausible_title,
     is_safe_path_component, slugify, word_count,

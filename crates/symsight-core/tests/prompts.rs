@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use symsight_core::{
     length_rewrite_prompt, load_brand_file, safe_format, system_prompt, user_prompt, ContentFormat,
-    GenerateRequest,
+    GenerateError, GenerateRequest, ToneSpec,
 };
 
 fn repo_root() -> PathBuf {
@@ -32,19 +32,23 @@ fn fixture_req(type_id: &str, format: ContentFormat) -> GenerateRequest {
         max_chars: None,
         use_search: None,
         model: None,
+        tone: None,
     }
 }
 
 #[test]
 fn article_prompts_match_python() {
     let req = fixture_req("general", ContentFormat::Article);
-    assert_eq!(system_prompt(&req), golden("article_system.txt"));
+    assert_eq!(
+        system_prompt(&req, "2026-08-05").unwrap(),
+        golden("article_system.txt")
+    );
     assert_eq!(
         user_prompt(&req, "2026-08-05").unwrap(),
         golden("article_user.txt")
     );
     assert_eq!(
-        length_rewrite_prompt(&req, "T", "Body text.", 2),
+        length_rewrite_prompt(&req, "T", "Body text.", 2, "2026-08-05"),
         golden("article_rewrite.txt").trim_end_matches('\n')
     );
 }
@@ -54,13 +58,16 @@ fn social_prompts_match_python() {
     let mut req = fixture_req("social-tip", ContentFormat::Social);
     req.topic = Some("hydration".into());
     req.max_chars = Some(180);
-    assert_eq!(system_prompt(&req), golden("social_system.txt"));
+    assert_eq!(
+        system_prompt(&req, "2026-08-05").unwrap(),
+        golden("social_system.txt")
+    );
     assert_eq!(
         user_prompt(&req, "2026-08-05").unwrap(),
         golden("social_user.txt")
     );
     assert_eq!(
-        length_rewrite_prompt(&req, "", "A post", 6),
+        length_rewrite_prompt(&req, "", "A post", 6, "2026-08-05"),
         golden("social_rewrite.txt").trim_end_matches('\n')
     );
 }
@@ -79,6 +86,58 @@ fn social_without_char_mention_appends_hard_limit() {
         user_prompt(&req, "2026-08-05").unwrap(),
         golden("bare_social_user.txt").trim_end_matches('\n')
     );
+}
+
+#[test]
+fn tone_and_template_enter_the_prompt() {
+    let mut req = fixture_req("general", ContentFormat::Article);
+    req.brand.tones.insert(
+        "briefing".into(),
+        ToneSpec {
+            description: "Lead".into(),
+            instruction: "Open with the fact.\n".into(),
+        },
+    );
+    req.brand.default_tone = "briefing".into();
+    req.brand.formats.article.template = "On {today}, explain {topic} for {tone}.\n".into();
+
+    let sys = system_prompt(&req, "2026-08-05").unwrap();
+    assert!(sys.contains("Tone (briefing): Open with the fact."));
+    assert!(sys.contains("Article template"));
+    assert!(sys.contains("On 2026-08-05, explain testing for briefing."));
+    assert!(sys.contains("Voice: Neutral test voice. Plain English."));
+
+    req.brand.types.get_mut("general").unwrap().user_template =
+        "Outline:\n{article_template}\nTone {tone}.".into();
+    let placed = system_prompt(&req, "2026-08-05").unwrap();
+    assert!(!placed.contains("Article template"));
+    let usr = user_prompt(&req, "2026-08-05").unwrap();
+    assert!(usr.contains("On 2026-08-05, explain testing for briefing."));
+    assert!(usr.contains("Tone briefing."));
+
+    req.format = ContentFormat::Social;
+    req.type_id = "social-tip".into();
+    let social = system_prompt(&req, "2026-08-05").unwrap();
+    assert!(social.contains("Tone (briefing): Open with the fact."));
+    assert!(!social.contains("Article template"));
+    assert!(!social.contains("On 2026-08-05"));
+
+    let rewrite = length_rewrite_prompt(&req, "T", "Body", 2, "2026-08-05");
+    assert!(rewrite.contains("Keep the briefing tone: Open with the fact."));
+    assert!(!rewrite.contains("Keep this article template:"));
+
+    req.format = ContentFormat::Article;
+    req.type_id = "general".into();
+    let article_rewrite = length_rewrite_prompt(&req, "T", "Body", 2, "2026-08-05");
+    assert!(article_rewrite.contains("Keep this article template:"));
+    assert!(article_rewrite.contains("On 2026-08-05, explain testing for briefing."));
+    assert!(article_rewrite.contains("Current word count: 2."));
+
+    req.tone = Some("missing".into());
+    match system_prompt(&req, "2026-08-05").unwrap_err() {
+        GenerateError::UnknownTone { tone_id, .. } => assert_eq!(tone_id, "missing"),
+        other => panic!("unexpected {other}"),
+    }
 }
 
 #[test]

@@ -38,6 +38,12 @@ pub enum GenerateError {
         brand_id: String,
         known: String,
     },
+    #[error("Unknown tone '{tone_id}' for brand '{brand_id}'. Known: {known}")]
+    UnknownTone {
+        tone_id: String,
+        brand_id: String,
+        known: String,
+    },
     #[error("Empty response from model")]
     Empty,
     #[error("Generated text contains forbidden brand variant(s): {hits}. Re-run generation.")]

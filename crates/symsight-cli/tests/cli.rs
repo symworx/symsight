@@ -92,6 +92,20 @@ fn parse_generate_flag_matrix() {
 }
 
 #[test]
+fn parse_tone_and_voice_alias() {
+    let by_tone = Cli::try_parse_from(["symsight", "generate", "--tone", "briefing"]).unwrap();
+    match by_tone.command {
+        Command::Generate { tone, .. } => assert_eq!(tone.as_deref(), Some("briefing")),
+        other => panic!("{other:?}"),
+    }
+    let by_voice = Cli::try_parse_from(["symsight", "generate", "--voice", "plain"]).unwrap();
+    match by_voice.command {
+        Command::Generate { tone, .. } => assert_eq!(tone.as_deref(), Some("plain")),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn no_search_wins_over_search() {
     assert_eq!(resolve_use_search(true, true), Some(false));
     assert_eq!(resolve_use_search(true, false), Some(true));

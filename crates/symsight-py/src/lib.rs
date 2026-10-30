@@ -21,7 +21,8 @@ use symsight_core::{
     iter_scan_files, length_rewrite_prompt, list_brand_files, list_brands, list_drafts, list_final,
     load_brand_file, parse_front_matter, read_draft, render_front_matter, resolve_brand,
     save_draft_body, scan_paths, set_status, slugify, strip_disclaimer_from_body, system_prompt,
-    unique_draft_path, user_prompt, word_count, write_draft_content, write_new_draft, AppConfig,
+    unique_draft_path, user_prompt, utc_today, word_count, write_draft_content, write_new_draft,
+    AppConfig,
     Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta, FinalizeError, FrontValue,
     GenerateError, GenerateRequest, LlmClient, LlmError, WriteNewDraft,
 };
@@ -94,6 +95,11 @@ fn extract_req(obj: &Bound<'_, PyAny>) -> PyResult<GenerateRequest> {
     let max_chars: Option<i64> = obj.getattr("max_chars")?.extract()?;
     let use_search: Option<bool> = obj.getattr("use_search")?.extract()?;
     let model: Option<String> = obj.getattr("model")?.extract()?;
+    let tone: Option<String> = if obj.hasattr("tone")? {
+        obj.getattr("tone")?.extract()?
+    } else {
+        None
+    };
     Ok(GenerateRequest {
         brand,
         type_id,
@@ -104,6 +110,7 @@ fn extract_req(obj: &Bound<'_, PyAny>) -> PyResult<GenerateRequest> {
         max_chars,
         use_search,
         model,
+        tone,
     })
 }
 
@@ -361,9 +368,11 @@ fn scan_paths_py(
 }
 
 #[pyfunction]
-#[pyo3(name = "system_prompt")]
-fn system_prompt_py(req: Bound<'_, PyAny>) -> PyResult<String> {
-    Ok(system_prompt(&extract_req(&req)?))
+#[pyo3(name = "system_prompt", signature = (req, today=None))]
+fn system_prompt_py(req: Bound<'_, PyAny>, today: Option<String>) -> PyResult<String> {
+    let req = extract_req(&req)?;
+    let owned = today.unwrap_or_else(utc_today);
+    system_prompt(&req, &owned).map_err(map_gen)
 }
 
 #[pyfunction]
@@ -373,18 +382,25 @@ fn user_prompt_py(req: Bound<'_, PyAny>, today: &str) -> PyResult<String> {
 }
 
 #[pyfunction]
-#[pyo3(name = "length_rewrite_prompt")]
+#[pyo3(
+    name = "length_rewrite_prompt",
+    signature = (req, title, body, current_count, today=None)
+)]
 fn length_rewrite_prompt_py(
     req: Bound<'_, PyAny>,
     title: &str,
     body: &str,
     current_count: i64,
+    today: Option<String>,
 ) -> PyResult<String> {
+    let req = extract_req(&req)?;
+    let owned = today.unwrap_or_else(utc_today);
     Ok(length_rewrite_prompt(
-        &extract_req(&req)?,
+        &req,
         title,
         body,
         current_count,
+        &owned,
     ))
 }
 

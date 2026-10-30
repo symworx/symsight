@@ -55,6 +55,9 @@ fn load_fixture_co_fields_and_type_order() {
     assert_eq!(brand.formats.article.default_min_words, 50);
     assert_eq!(brand.formats.article.default_max_words, 100);
     assert_eq!(brand.formats.social.default_max_chars, 200);
+    assert!(brand.tones.is_empty());
+    assert!(brand.default_tone.is_empty());
+    assert!(brand.formats.article.template.is_empty());
 }
 
 #[test]
@@ -84,6 +87,11 @@ fn load_example_writer_fields_and_type_order() {
     assert_eq!(brand.formats.article.default_min_words, 200);
     assert_eq!(brand.formats.article.default_max_words, 500);
     assert_eq!(brand.formats.social.default_max_chars, 200);
+    assert_eq!(brand.default_tone, "plain");
+    let tone_keys: Vec<&str> = brand.tones.keys().map(String::as_str).collect();
+    assert_eq!(tone_keys, ["plain", "briefing"]);
+    assert!(brand.tones["plain"].instruction.contains("plain language"));
+    assert!(brand.formats.article.template.contains("Why it matters"));
     assert_eq!(
         brand.types["general"].user_template,
         "Today is {today}. Write a {min_words}–{max_words} word piece on: {topic}.\n\
@@ -255,6 +263,7 @@ fn generate_request_resolves_defaults_and_overrides() {
         max_chars: None,
         use_search: None,
         model: None,
+        tone: None,
     };
     assert_eq!(req.resolved_min_words(), 50);
     assert_eq!(req.resolved_max_words(), 100);
@@ -273,6 +282,7 @@ fn generate_request_resolves_defaults_and_overrides() {
         max_chars: Some(120),
         use_search: None,
         model: None,
+        tone: None,
     };
     assert_eq!(news_req.resolved_min_words(), 80);
     assert_eq!(news_req.resolved_max_words(), 90);
@@ -289,6 +299,7 @@ fn generate_request_resolves_defaults_and_overrides() {
         max_chars: None,
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     assert!(!forced_off.resolved_use_search().unwrap());
 }
@@ -306,6 +317,7 @@ fn generate_request_unknown_type() {
         max_chars: None,
         use_search: None,
         model: None,
+        tone: None,
     };
     let err = req.resolved_type().unwrap_err();
     match err {
@@ -317,6 +329,151 @@ fn generate_request_unknown_type() {
             assert_eq!(type_id, "missing");
             assert_eq!(brand_id, "fixture-co");
             assert_eq!(known, "general, social-tip");
+        }
+        other => panic!("unexpected {other}"),
+    }
+}
+
+#[test]
+fn voices_alias_loads_as_tones_and_fills_default() {
+    let dir = tempfile();
+    let path = dir.join("desk.yaml");
+    fs::write(
+        &path,
+        "\
+id: desk
+display_name: Desk
+voice: Base voice.
+full_name: Desk Name
+voices:
+  briefing:
+    voice: |
+      Lead with the fact.
+  plain:
+    text: Say it simply.
+default_voice: briefing
+formats:
+  article:
+    template: |
+      On {today}, cover {topic}.
+",
+    )
+    .unwrap();
+    let brand = load_brand_file(&path).unwrap();
+    let keys: Vec<&str> = brand.tones.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["briefing", "plain"]);
+    assert_eq!(brand.default_tone, "briefing");
+    assert!(brand.tones["briefing"].instruction.contains("Lead with the fact"));
+    assert!(brand.tones["plain"].instruction.contains("Say it simply"));
+    assert!(brand.formats.article.template.contains("On {today}"));
+}
+
+#[test]
+fn omitted_default_tone_uses_first_tone() {
+    let dir = tempfile();
+    let path = dir.join("first.yaml");
+    fs::write(
+        &path,
+        "\
+id: first
+display_name: First
+voice: v
+full_name: First Brand
+tones:
+  alpha:
+    instruction: Alpha voice.
+  beta:
+    instruction: Beta voice.
+",
+    )
+    .unwrap();
+    let brand = load_brand_file(&path).unwrap();
+    assert_eq!(brand.default_tone, "alpha");
+}
+
+#[test]
+fn invalid_tone_config_is_rejected() {
+    let dir = tempfile();
+    let both = dir.join("both.yaml");
+    fs::write(
+        &both,
+        "\
+id: both
+display_name: Both
+voice: v
+full_name: Both Brand
+tones:
+  plain:
+    instruction: Plain.
+voices:
+  other:
+    instruction: Other.
+",
+    )
+    .unwrap();
+    let err = load_brand_file(&both).unwrap_err();
+    assert!(err.to_string().contains("both 'tones' and 'voices'"));
+
+    let missing = dir.join("missing.yaml");
+    fs::write(
+        &missing,
+        "\
+id: missing
+display_name: Missing
+voice: v
+full_name: Missing Brand
+tones:
+  plain:
+    instruction: Plain.
+default_tone: formal
+",
+    )
+    .unwrap();
+    let err = load_brand_file(&missing).unwrap_err();
+    assert!(err.to_string().contains("default_tone 'formal' is not defined"));
+
+    let blank = dir.join("blank.yaml");
+    fs::write(
+        &blank,
+        "\
+id: blank
+display_name: Blank
+voice: v
+full_name: Blank Brand
+tones:
+  plain:
+    instruction: '   '
+",
+    )
+    .unwrap();
+    let err = load_brand_file(&blank).unwrap_err();
+    assert!(err.to_string().contains("missing an instruction"));
+}
+
+#[test]
+fn unknown_tone_names_known_ids() {
+    let brand = load_brand_file(example_writer()).unwrap();
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: None,
+        min_words: None,
+        max_words: None,
+        max_chars: None,
+        use_search: None,
+        model: None,
+        tone: Some("missing".into()),
+    };
+    match req.resolved_tone().unwrap_err() {
+        GenerateError::UnknownTone {
+            tone_id,
+            brand_id,
+            known,
+        } => {
+            assert_eq!(tone_id, "missing");
+            assert_eq!(brand_id, "example-writer");
+            assert_eq!(known, "briefing, plain");
         }
         other => panic!("unexpected {other}"),
     }

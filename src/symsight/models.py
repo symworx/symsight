@@ -15,6 +15,13 @@ class ContentFormat(str, Enum):
     SOCIAL = "social"
 
 
+class ToneSpec(BaseModel):
+    """One named tone (a selectable voice register) under a brand."""
+
+    description: str = ""
+    instruction: str
+
+
 class TypeSpec(BaseModel):
     """One content type under a brand (e.g. general, news)."""
 
@@ -26,6 +33,7 @@ class TypeSpec(BaseModel):
 class ArticleFormatSpec(BaseModel):
     default_min_words: int = 200
     default_max_words: int = 500
+    template: str = ""
 
 
 class SocialFormatSpec(BaseModel):
@@ -48,6 +56,8 @@ class Brand(BaseModel):
     forbidden: list[str] = Field(default_factory=list)
     disclaimer: str = ""
     types: dict[str, TypeSpec] = Field(default_factory=dict)
+    tones: dict[str, ToneSpec] = Field(default_factory=dict)
+    default_tone: str = ""
     formats: FormatSpecs = Field(default_factory=FormatSpecs)
 
     @field_validator("short_name", mode="before")
@@ -77,6 +87,7 @@ class GenerateRequest(BaseModel):
     max_chars: int | None = None
     use_search: bool | None = None
     model: str | None = None
+    tone: str | None = None
 
     def resolved_type(self) -> TypeSpec:
         if self.type_id not in self.brand.types:
@@ -104,6 +115,23 @@ class GenerateRequest(BaseModel):
             return self.use_search
         return self.resolved_type().default_use_search
 
+    def resolved_tone(self) -> tuple[str, ToneSpec] | None:
+        """Selected tone, or None when the brand defines no tones.
+
+        A request tone wins. Otherwise the brand default_tone is used.
+        """
+        requested = (self.tone or "").strip()
+        tone_id = requested or self.brand.default_tone.strip()
+        if not tone_id:
+            return None
+        spec = self.brand.tones.get(tone_id)
+        if spec is None:
+            known = ", ".join(sorted(self.brand.tones)) or "(none)"
+            raise ValueError(
+                f"Unknown tone {tone_id!r} for brand {self.brand.id!r}. Known: {known}"
+            )
+        return tone_id, spec
+
 
 class DraftMeta(BaseModel):
     """Sidecar / generation metadata."""
@@ -112,6 +140,7 @@ class DraftMeta(BaseModel):
     type: str
     format: str
     topic: str | None = None
+    tone: str | None = None
     brand_id: str
     used_web_search: bool = False
     word_count: int | None = None

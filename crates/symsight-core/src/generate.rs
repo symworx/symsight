@@ -16,7 +16,7 @@ use crate::draft_io::{write_new_draft, WriteNewDraft};
 use crate::error::GenerateError;
 use crate::llm::{CompletionRequest, LlmClient, XaiClient};
 use crate::models::{ContentFormat, DraftMeta, GenerateRequest};
-use crate::prompts::{length_rewrite_prompt, system_prompt, user_prompt};
+use crate::prompts::{length_rewrite_prompt, system_prompt, user_prompt, utc_today};
 use crate::textutil::{
     char_count, extract_social_text, extract_title_body, is_plausible_title, word_count,
 };
@@ -27,6 +27,9 @@ pub fn generate_content(
     cfg: &AppConfig,
     client: Option<&dyn LlmClient>,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
+    // Resolve type and tone before the API key so a bad id fails closed.
+    req.resolved_type()?;
+    req.resolved_tone()?;
     let api_key = cfg
         .require_api_key()
         .map_err(|e| GenerateError::Message(e.to_string()))?;
@@ -45,9 +48,9 @@ pub fn generate_content(
         (None, None) => unreachable!("client or owned XaiClient"),
     };
 
-    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let today = utc_today();
     let use_search = req.resolved_use_search()?;
-    let sys_p = system_prompt(req);
+    let sys_p = system_prompt(req, &today)?;
     let usr_p = user_prompt(req, &today)?;
     let raw = llm
         .create_completion(&CompletionRequest {
@@ -62,9 +65,9 @@ pub fn generate_content(
     }
 
     let (title, body, meta) = if req.format == ContentFormat::Social {
-        finish_social(req, llm, &model, &raw, use_search)?
+        finish_social(req, llm, &model, &raw, use_search, &sys_p, &today)?
     } else {
-        finish_article(req, llm, &model, &raw, use_search)?
+        finish_article(req, llm, &model, &raw, use_search, &sys_p, &today)?
     };
 
     let hits = check_text(&format!("{title}\n{body}"), &req.brand);
@@ -82,6 +85,8 @@ fn finish_article(
     model: &str,
     raw: &str,
     use_search: bool,
+    sys_p: &str,
+    today: &str,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
     let (mut title, mut body) =
         extract_title_body(raw).map_err(|e| GenerateError::Message(e.to_string()))?;
@@ -90,11 +95,11 @@ fn finish_article(
     let max_w = req.resolved_max_words();
 
     if wc < min_w as usize || wc > max_w as usize || !is_plausible_title(&title) {
-        let adjust = length_rewrite_prompt(req, &title, &body, wc as i64);
+        let adjust = length_rewrite_prompt(req, &title, &body, wc as i64, today);
         let raw2 = llm
             .create_completion(&CompletionRequest {
                 model: model.to_string(),
-                system: system_prompt(req),
+                system: sys_p.to_string(),
                 user: adjust,
                 use_search: false,
             })
@@ -132,6 +137,7 @@ fn finish_article(
         type_id: req.type_id.clone(),
         format: ContentFormat::Article.as_str().to_string(),
         topic: req.topic.clone(),
+        tone: req.resolved_tone()?.map(|(id, _)| id),
         brand_id: req.brand.id.clone(),
         used_web_search: use_search,
         word_count: Some(wc as i64),
@@ -149,17 +155,19 @@ fn finish_social(
     model: &str,
     raw: &str,
     use_search: bool,
+    sys_p: &str,
+    today: &str,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
     let mut body = extract_social_text(raw).map_err(|e| GenerateError::Message(e.to_string()))?;
     let mut cc = char_count(&body);
     let max_c = req.resolved_max_chars();
 
     if cc > max_c as usize {
-        let adjust = length_rewrite_prompt(req, "", &body, cc as i64);
+        let adjust = length_rewrite_prompt(req, "", &body, cc as i64, today);
         let raw2 = llm
             .create_completion(&CompletionRequest {
                 model: model.to_string(),
-                system: system_prompt(req),
+                system: sys_p.to_string(),
                 user: adjust,
                 use_search: false,
             })
@@ -189,6 +197,7 @@ fn finish_social(
         type_id: req.type_id.clone(),
         format: ContentFormat::Social.as_str().to_string(),
         topic: req.topic.clone(),
+        tone: req.resolved_tone()?.map(|(id, _)| id),
         brand_id: req.brand.id.clone(),
         used_web_search: use_search,
         word_count: None,

@@ -8,6 +8,17 @@ voice: |
   context without hype. Prefer plain language over jargon; when a term is
   necessary, define it once. Educational only—never personalized financial,
   legal, or tax advice. Avoid performance promises and sensational headlines.
+tones:
+  measured:
+    description: Calm desk register
+    instruction: |
+      Measured and practical. Define jargon once. No hype and no performance
+      promises.
+  briefing:
+    description: Lead with the development
+    instruction: |
+      Open with what changed. Name the trade-off. Stop when the point is made.
+default_tone: measured
 full_name: Sample Business Desk
 short_name: Desk
 forbidden:
@@ -49,5 +60,13 @@ formats:
   article:
     default_min_words: 200
     default_max_words: 450
+    template: |
+      **TL;DR:** 1–2 concrete sentences on what changed or what the reader will understand.
+      ## What it is
+      Name the business or market idea in plain language.
+      ## What to watch
+      Drivers, risks, and open questions. Do not invent figures.
+      ## Takeaway
+      One educational point. No personalized financial, legal, or tax advice.
   social:
     default_max_chars: 220
