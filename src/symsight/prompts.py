@@ -11,8 +11,8 @@ from symsight._native import system_prompt as _system_prompt
 from symsight._native import user_prompt as _user_prompt
 
 
-def system_prompt(req: Any) -> str:
-    return str(_system_prompt(req))
+def system_prompt(req: Any, today: str | None = None) -> str:
+    return str(_system_prompt(req, today))
 
 
 def user_prompt(req: Any, today: str) -> str:
@@ -25,5 +25,6 @@ def length_rewrite_prompt(
     title: str,
     body: str,
     current_count: int,
+    today: str | None = None,
 ) -> str:
-    return str(_length_rewrite_prompt(req, title, body, current_count))
+    return str(_length_rewrite_prompt(req, title, body, current_count, today))

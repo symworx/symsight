@@ -38,9 +38,13 @@ Ship only a generic example:
 Add your own (e.g. `config/brands/my-firm.yaml`) with:
 
 - `voice`, `full_name`, `forbidden`, `disclaimer`
-- `types` with `user_template` strings (`{today}`, `{topic}`, `{min_words}`, `{max_words}`, `{max_chars}`, `{full_name}`)
-- `formats.article` / `formats.social` defaults
-- `image.style` (and optional `image.model`, `image.aspect`, `image.quality`) for `symsight image`
+- `tones` with an `instruction` (and optional `description`) for each named register, plus `default_tone`. `voices` / `default_voice` are aliases. Omit `tones` to keep the standing `voice` only.
+- `types` with `user_template` strings
+- `formats.article` / `formats.social` defaults. `formats.article.template` is an optional outline for articles.
+
+Placeholders in `user_template` and in `formats.article.template`: `{today}`, `{topic}`, `{min_words}`, `{max_words}`, `{max_chars}`, `{full_name}`, `{short_name}`, `{display_name}`, `{voice}`, `{tone}`, `{tone_instruction}`, `{article_template}`.
+
+A non-empty article template is inserted into the article system prompt. If a type's `user_template` already contains `{article_template}`, that outline is filled there and is not repeated in the system prompt. The selected tone is added to the system prompt as `Tone (<id>): …` and stored on the draft.
 
 ```bash
 uv run symsight brands
@@ -51,6 +55,8 @@ uv run symsight brands
 ```bash
 # Article (default type = first type on brand if omitted)
 uv run symsight generate --brand example-writer --type general --topic "deep work"
+# --voice is an alias of --tone. Omit it to use the brand default_tone.
+uv run symsight generate --brand example-writer --type general --topic "deep work" --tone briefing
 uv run symsight generate --type news --topic "semiconductors" --search
 
 # Social (≤ max chars, default 200 from brand)

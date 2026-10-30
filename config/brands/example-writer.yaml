@@ -1,5 +1,5 @@
 # Generic example brand — replace with your own brand file(s).
-# Copy this file and edit voice, name, types, and disclaimer.
+# Copy this file and edit voice, tones, name, types, template, and disclaimer.
 # Never commit real client brands if they are private.
 
 id: example-writer
@@ -7,6 +7,21 @@ display_name: Independent Writer
 voice: |
   Clear, direct, and curious. Prefer plain language. Explain technical terms
   briefly when they first appear. Educational tone; no hype.
+# Named tones. One is used on every generate when this map is set.
+# default_tone applies when --tone / --voice is omitted.
+# voices and default_voice are accepted aliases of tones and default_tone.
+tones:
+  plain:
+    description: Everyday explanatory register
+    instruction: |
+      Write in plain language. Short sentences. Define a technical term the
+      first time you use it. No hype.
+  briefing:
+    description: Lead with the point
+    instruction: |
+      Open with the concrete point. Short paragraphs. No warmup and no closing
+      pep talk.
+default_tone: plain
 full_name: Independent Writer
 short_name: Writer
 forbidden: []
@@ -43,6 +58,17 @@ formats:
   article:
     default_min_words: 200
     default_max_words: 500
+    # Placed in the article system prompt. Also available as {article_template}
+    # in a type user_template; if that placeholder is present, the outline is
+    # not repeated in the system prompt.
+    template: |
+      **TL;DR:** 1–2 concrete sentences.
+      ## What it is
+      Name the subject in plain language.
+      ## Why it matters
+      State what changes for the reader, including the trade-off.
+      ## What to do next
+      One practical step. No personalized advice.
   social:
     default_max_chars: 200
 image:

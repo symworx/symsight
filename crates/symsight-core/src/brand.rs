@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[allow(deprecated)]
-use serde_yml::{from_str, from_value, Value};
+use serde_yml::{from_str, from_value, Mapping, Value};
 
 use crate::error::BrandError;
 use crate::models::Brand;
@@ -38,12 +38,43 @@ pub fn load_brand_file(path: impl AsRef<Path>) -> Result<Brand, BrandError> {
             .to_string();
         mapping.insert("id", Value::String(stem));
     }
+    normalize_brand_aliases(mapping).map_err(|message| BrandError::Invalid {
+        path: path.to_path_buf(),
+        message,
+    })?;
     let mut brand: Brand = from_value(raw).map_err(|err| BrandError::Invalid {
         path: path.to_path_buf(),
         message: err.to_string(),
     })?;
-    brand.finalize_short_name();
+    brand.finalize().map_err(|message| BrandError::Invalid {
+        path: path.to_path_buf(),
+        message,
+    })?;
     Ok(brand)
+}
+
+/// Accept `voices` / `default_voice` as aliases of `tones` / `default_tone`.
+fn normalize_brand_aliases(mapping: &mut Mapping) -> Result<(), String> {
+    if mapping.contains_key("voices") {
+        if mapping.contains_key("tones") {
+            return Err("brand defines both 'tones' and 'voices'; use one map".into());
+        }
+        let voices = mapping.remove("voices").expect("voices key was present");
+        mapping.insert("tones", voices);
+    }
+    if mapping.contains_key("default_voice") {
+        let alias = mapping
+            .remove("default_voice")
+            .expect("default_voice key was present");
+        if let Some(existing) = mapping.get("default_tone") {
+            if existing != &alias {
+                return Err("default_tone and default_voice disagree; set only one".into());
+            }
+        } else {
+            mapping.insert("default_tone", alias);
+        }
+    }
+    Ok(())
 }
 
 /// YAML then leftover YML files, each group sorted by path (same as Python).

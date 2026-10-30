@@ -78,6 +78,9 @@ pub enum Command {
         /// Override model id
         #[arg(long)]
         model: Option<String>,
+        /// Tone id from the brand (alias: --voice). Default: brand default_tone
+        #[arg(long, visible_alias = "voice")]
+        tone: Option<String>,
         #[arg(long)]
         drafts_dir: Option<PathBuf>,
     },
@@ -182,6 +185,7 @@ fn cmd_generate(cli: &Cli) -> i32 {
         search,
         no_search,
         model,
+        tone,
         drafts_dir,
     } = &cli.command
     else {
@@ -234,10 +238,26 @@ fn cmd_generate(cli: &Cli) -> i32 {
         max_chars: *max_chars,
         use_search: resolve_use_search(*search, *no_search),
         model: model.clone(),
+        tone: tone.clone(),
+    };
+
+    let requested = tone.as_deref().map(str::trim).filter(|id| !id.is_empty());
+    let tone_label = match req.resolved_tone() {
+        Ok(Some((id, _))) => {
+            if requested.is_none() {
+                eprintln!("Using default tone: {id}");
+            }
+            format!(", tone {id}")
+        }
+        Ok(None) => String::new(),
+        Err(exc) => {
+            eprintln!("Generation failed: {exc}");
+            return 1;
+        }
     };
 
     println!(
-        "Generating {} ({type_id}) for {}…",
+        "Generating {} ({type_id}{tone_label}) for {}…",
         fmt.as_str(),
         brand.display_name
     );

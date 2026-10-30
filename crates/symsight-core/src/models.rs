@@ -4,7 +4,9 @@
 //! Domain types: brands, generation requests, and drafts.
 //!
 //! Field-for-field map of `src/symsight/models.py`. On-disk brand YAML is the
-//! contract. `image` is optional; a brand with no block still loads.
+//! contract. Optional `tones` and `formats.article.template` extend that
+//! contract; brands that omit them keep the previous prompt.
+//! `image` is optional; a brand with no block still loads.
 
 use std::path::PathBuf;
 
@@ -49,6 +51,16 @@ impl std::fmt::Display for ContentFormat {
     }
 }
 
+/// One named tone (a selectable voice register) under a brand.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToneSpec {
+    #[serde(default)]
+    pub description: String,
+    /// Prompt text for this register. YAML may use `text` or `voice`.
+    #[serde(alias = "text", alias = "voice")]
+    pub instruction: String,
+}
+
 /// One content type under a brand (e.g. general, news).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeSpec {
@@ -66,6 +78,9 @@ pub struct ArticleFormatSpec {
     pub default_min_words: i64,
     #[serde(default = "default_max_words")]
     pub default_max_words: i64,
+    /// Outline inserted into the article prompt. Empty leaves the prompt unchanged.
+    #[serde(default)]
+    pub template: String,
 }
 
 impl Default for ArticleFormatSpec {
@@ -73,6 +88,7 @@ impl Default for ArticleFormatSpec {
         Self {
             default_min_words: default_min_words(),
             default_max_words: default_max_words(),
+            template: String::new(),
         }
     }
 }
@@ -154,6 +170,13 @@ pub struct Brand {
     /// Insertion-ordered. CLI default type is the first key.
     #[serde(default)]
     pub types: IndexMap<String, TypeSpec>,
+    /// Insertion-ordered named tones. Empty means `voice` is the only register.
+    #[serde(default)]
+    pub tones: IndexMap<String, ToneSpec>,
+    /// Used when a request does not name a tone. Empty when `tones` is empty.
+    /// Loader fills the first tone id when `tones` is set and this is omitted.
+    #[serde(default)]
+    pub default_tone: String,
     #[serde(default)]
     pub formats: FormatSpecs,
     #[serde(default)]
@@ -162,8 +185,47 @@ pub struct Brand {
 
 impl Brand {
     /// Mirrors `Brand.model_post_init`: empty `short_name` → first token of
-    /// `full_name`, else `id`.
-    pub fn finalize_short_name(&mut self) {
+    /// `full_name`, else `id`. Also checks tones and fills `default_tone`.
+    pub fn finalize(&mut self) -> Result<(), String> {
+        self.finalize_short_name();
+        self.default_tone = self.default_tone.trim().to_string();
+        for (id, spec) in &self.tones {
+            if id.trim().is_empty() {
+                return Err("tone id must not be empty".into());
+            }
+            if spec.instruction.trim().is_empty() {
+                return Err(format!("tone '{id}' is missing an instruction"));
+            }
+        }
+        if self.tones.is_empty() {
+            if !self.default_tone.is_empty() {
+                return Err(format!(
+                    "default_tone '{}' set but brand has no tones",
+                    self.default_tone
+                ));
+            }
+            return Ok(());
+        }
+        if self.default_tone.is_empty() {
+            self.default_tone = self
+                .tones
+                .keys()
+                .next()
+                .cloned()
+                .expect("tones is non-empty");
+        } else if !self.tones.contains_key(&self.default_tone) {
+            let mut keys: Vec<&str> = self.tones.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            return Err(format!(
+                "default_tone '{}' is not defined. Known: {}",
+                self.default_tone,
+                keys.join(", ")
+            ));
+        }
+        Ok(())
+    }
+
+    fn finalize_short_name(&mut self) {
         if self.short_name.is_empty() {
             self.short_name = self
                 .full_name
@@ -188,6 +250,8 @@ pub struct GenerateRequest {
     pub max_chars: Option<i64>,
     pub use_search: Option<bool>,
     pub model: Option<String>,
+    /// Overrides [`Brand::default_tone`] when set to a non-empty id.
+    pub tone: Option<String>,
 }
 
 impl GenerateRequest {
@@ -229,6 +293,44 @@ impl GenerateRequest {
         }
         Ok(self.resolved_type()?.default_use_search)
     }
+
+    /// Selected tone, or `Ok(None)` when the brand defines no tones.
+    /// A request tone wins; otherwise [`Brand::default_tone`] is used.
+    pub fn resolved_tone(&self) -> Result<Option<(String, &ToneSpec)>, GenerateError> {
+        let requested = self
+            .tone
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
+        let id = match requested {
+            Some(id) => id,
+            None => {
+                let default = self.brand.default_tone.trim();
+                if default.is_empty() {
+                    return Ok(None);
+                }
+                default.to_string()
+            }
+        };
+        match self.brand.tones.get(&id) {
+            Some(spec) => Ok(Some((id, spec))),
+            None => {
+                let known = if self.brand.tones.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    let mut keys: Vec<&str> = self.brand.tones.keys().map(String::as_str).collect();
+                    keys.sort_unstable();
+                    keys.join(", ")
+                };
+                Err(GenerateError::UnknownTone {
+                    tone_id: id,
+                    brand_id: self.brand.id.clone(),
+                    known,
+                })
+            }
+        }
+    }
 }
 
 /// Sidecar `.meta.json`. Serialize all fields, including nulls.
@@ -239,6 +341,9 @@ pub struct DraftMeta {
     pub type_id: String,
     pub format: String,
     pub topic: Option<String>,
+    /// Tone id used for this draft. Omitted from JSON when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<String>,
     pub brand_id: String,
     pub used_web_search: bool,
     pub word_count: Option<i64>,
@@ -373,6 +478,7 @@ mod tests {
             type_id: "general".into(),
             format: "article".into(),
             topic: None,
+            tone: None,
             brand_id: "fixture-co".into(),
             used_web_search: false,
             word_count: Some(12),

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Brand YAML `tones` (alias `voices`) with `default_tone`, and `generate --tone` / `--voice` to select one. The chosen tone is added to the system prompt and stored on the draft.
+- Optional `formats.article.template`. The outline is passed into the article prompt (`{article_template}` in a type template, or the system prompt when the type template does not reference it).
 - `symsight image` generates one image from the active brand's `image.style`. Model, aspect, and quality come from that same block unless a flag overrides them.
 
 ### Changed

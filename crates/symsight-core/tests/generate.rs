@@ -64,6 +64,7 @@ fn generate_article_scripted_writes_draft() {
         max_chars: None,
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     let path = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
     assert!(path.is_file());
@@ -90,6 +91,7 @@ fn generate_social_scripted_writes_draft() {
         max_chars: Some(200),
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     let path = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
     assert!(fs::read_to_string(path).unwrap().contains("short tip"));
@@ -112,6 +114,7 @@ fn article_rewrites_when_too_short() {
         max_chars: None,
         use_search: Some(true),
         model: None,
+        tone: None,
     };
     generate_content(&req, &cfg, Some(&client)).unwrap();
     assert_eq!(client.call_count(), 2);
@@ -140,6 +143,7 @@ fn article_rewrites_implausible_title_then_falls_back() {
         max_chars: None,
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     let (title, _, _) = generate_content(&req, &cfg, Some(&client)).unwrap();
     assert_eq!(title, "Testing");
@@ -163,6 +167,7 @@ fn social_rewrites_when_over_max_chars() {
         max_chars: Some(20),
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     let (_, body, _) = generate_content(&req, &cfg, Some(&client)).unwrap();
     assert_eq!(body, "short ok");
@@ -190,6 +195,7 @@ fn forbidden_term_fails_generation() {
         max_chars: None,
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
     match err {
@@ -214,9 +220,98 @@ fn empty_model_response_is_error() {
         max_chars: None,
         use_search: Some(false),
         model: None,
+        tone: None,
     };
     let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
     assert!(matches!(err, GenerateError::Empty));
+}
+
+#[test]
+fn tone_and_template_are_sent_and_recorded() {
+    let root = tmp_dir();
+    let path = root.join("toned.yaml");
+    fs::write(
+        &path,
+        "\
+id: toned
+display_name: Toned
+voice: Base voice.
+full_name: Toned Co
+tones:
+  briefing:
+    instruction: Open with the fact.
+default_tone: briefing
+types:
+  general:
+    user_template: |
+      Write about {topic}. Tone {tone}.
+formats:
+  article:
+    default_min_words: 50
+    default_max_words: 100
+    template: |
+      ## Why it matters
+      Cover {topic} on {today}.
+",
+    )
+    .unwrap();
+    let brand = load_brand_file(&path).unwrap();
+    let body = article_words(60);
+    let client = ScriptedClient::new(vec![body]);
+    let cfg = test_cfg(&root);
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: Some("widgets".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: Some(false),
+        model: None,
+        tone: None,
+    };
+    let draft = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
+    let call = client.calls.lock().unwrap()[0].clone();
+    assert!(call.system.contains("Tone (briefing): Open with the fact."));
+    assert!(call.system.contains("## Why it matters"));
+    assert!(call.user.contains("Tone briefing."));
+    let text = fs::read_to_string(&draft).unwrap();
+    assert!(text.contains("tone: \"briefing\""));
+    let meta: Value =
+        serde_json::from_str(&fs::read_to_string(draft.with_extension("meta.json")).unwrap())
+            .unwrap();
+    assert_eq!(meta["tone"], "briefing");
+}
+
+#[test]
+fn unknown_tone_fails_before_the_model() {
+    let root = tmp_dir();
+    let brand = load_brand_file(repo_root().join("tests/fixtures/fixture-co.yaml")).unwrap();
+    let client = ScriptedClient::new(vec![article_words(60)]);
+    let mut cfg = test_cfg(&root);
+    cfg.xai_api_key.clear();
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: Some("testing".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: Some(false),
+        model: None,
+        tone: Some("missing".into()),
+    };
+    let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
+    match err {
+        GenerateError::UnknownTone { tone_id, known, .. } => {
+            assert_eq!(tone_id, "missing");
+            assert_eq!(known, "(none)");
+        }
+        other => panic!("unexpected {other}"),
+    }
+    assert_eq!(client.call_count(), 0);
 }
 
 #[test]

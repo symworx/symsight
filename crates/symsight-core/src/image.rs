@@ -331,6 +331,8 @@ mod tests {
             forbidden: Vec::new(),
             disclaimer: String::new(),
             types: Default::default(),
+            tones: Default::default(),
+            default_tone: String::new(),
             formats: Default::default(),
             image: ImageSpec {
                 style: style.into(),

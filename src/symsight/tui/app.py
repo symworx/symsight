@@ -35,6 +35,15 @@ from symsight.models import Brand, ContentFormat, GenerateRequest
 from symsight.textutil import char_count, word_count
 
 
+def _tone_options(brand: Brand) -> list[tuple[str, str]]:
+    options: list[tuple[str, str]] = []
+    for tone_id, spec in brand.tones.items():
+        desc = spec.description.strip()
+        label = f"{tone_id} — {desc}" if desc else tone_id
+        options.append((label, tone_id))
+    return options
+
+
 class GenerateScreen(ModalScreen[bool]):
     """Modal form to generate a new draft."""
 
@@ -70,6 +79,13 @@ class GenerateScreen(ModalScreen[bool]):
             yield Label(f"Generate — {self.brand.display_name}")
             yield Label("Type")
             yield Select(type_opts, id="gen-type", value=type_opts[0][1], allow_blank=False)
+            tone_opts = _tone_options(self.brand)
+            if tone_opts:
+                default_tone = self.brand.default_tone
+                if default_tone not in self.brand.tones:
+                    default_tone = tone_opts[0][1]
+                yield Label("Tone")
+                yield Select(tone_opts, id="gen-tone", value=default_tone, allow_blank=False)
             yield Label("Format")
             yield Select(
                 [("article", "article"), ("social", "social")],
@@ -135,6 +151,9 @@ class GenerateScreen(ModalScreen[bool]):
                 use_search = False
             else:
                 use_search = None
+            tone = None
+            if self.brand.tones:
+                tone = str(self.query_one("#gen-tone", Select).value)
 
             req = GenerateRequest(
                 brand=self.brand,
@@ -145,6 +164,7 @@ class GenerateScreen(ModalScreen[bool]):
                 max_words=max_w,
                 max_chars=max_c,
                 use_search=use_search,
+                tone=tone,
             )
             path = generate_and_write(req, self.cfg)
             status(f"Wrote {path.name}")

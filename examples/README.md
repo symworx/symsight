@@ -38,6 +38,7 @@ uv run symsight brands
 uv run symsight generate \
   --brand-file examples/brands/sample-business.yaml \
   --type market-brief \
+  --tone briefing \
   --topic "what rising rates mean for short-duration bond funds" \
   --min-words 200 \
   --max-words 400
