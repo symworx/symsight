@@ -55,7 +55,7 @@ pub fn generate_content(
     let raw = llm
         .create_completion(&CompletionRequest {
             model: model.clone(),
-            system: sys_p,
+            system: sys_p.clone(),
             user: usr_p,
             use_search,
         })

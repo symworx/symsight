@@ -363,7 +363,9 @@ formats:
     let keys: Vec<&str> = brand.tones.keys().map(String::as_str).collect();
     assert_eq!(keys, ["briefing", "plain"]);
     assert_eq!(brand.default_tone, "briefing");
-    assert!(brand.tones["briefing"].instruction.contains("Lead with the fact"));
+    assert!(brand.tones["briefing"]
+        .instruction
+        .contains("Lead with the fact"));
     assert!(brand.tones["plain"].instruction.contains("Say it simply"));
     assert!(brand.formats.article.template.contains("On {today}"));
 }
@@ -430,7 +432,9 @@ default_tone: formal
     )
     .unwrap();
     let err = load_brand_file(&missing).unwrap_err();
-    assert!(err.to_string().contains("default_tone 'formal' is not defined"));
+    assert!(err
+        .to_string()
+        .contains("default_tone 'formal' is not defined"));
 
     let blank = dir.join("blank.yaml");
     fs::write(

@@ -46,12 +46,10 @@ pub fn load_brand_file(path: impl AsRef<Path>) -> Result<Brand, BrandError> {
         path: path.to_path_buf(),
         message: err.to_string(),
     })?;
-    brand
-        .finalize()
-        .map_err(|message| BrandError::Invalid {
-            path: path.to_path_buf(),
-            message,
-        })?;
+    brand.finalize().map_err(|message| BrandError::Invalid {
+        path: path.to_path_buf(),
+        message,
+    })?;
     Ok(brand)
 }
 
@@ -61,9 +59,7 @@ fn normalize_brand_aliases(mapping: &mut Mapping) -> Result<(), String> {
         if mapping.contains_key("tones") {
             return Err("brand defines both 'tones' and 'voices'; use one map".into());
         }
-        let voices = mapping
-            .remove("voices")
-            .expect("voices key was present");
+        let voices = mapping.remove("voices").expect("voices key was present");
         mapping.insert("tones", voices);
     }
     if mapping.contains_key("default_voice") {

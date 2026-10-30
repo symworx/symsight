@@ -38,6 +38,27 @@ def test_settings_uses_pydantic_model_copy(tmp_path: Path) -> None:
     assert screen.cfg.active_brand == "fixture-co"
 
 
+def test_tone_options_include_description() -> None:
+    from symsight.models import Brand, ToneSpec
+    from symsight.tui.app import _tone_options
+
+    brand = Brand(
+        id="desk",
+        display_name="Desk",
+        voice="Base voice.",
+        full_name="Desk",
+        tones={
+            "plain": ToneSpec(description="Everyday", instruction="Short sentences."),
+            "brief": ToneSpec(instruction="Lead with the fact."),
+        },
+        default_tone="plain",
+    )
+    assert _tone_options(brand) == [
+        ("plain — Everyday", "plain"),
+        ("brief", "brief"),
+    ]
+
+
 def test_generate_screen_imports(tmp_path: Path) -> None:
     from symsight.brand import load_brand_file
 

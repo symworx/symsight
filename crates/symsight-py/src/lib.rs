@@ -22,9 +22,8 @@ use symsight_core::{
     load_brand_file, parse_front_matter, read_draft, render_front_matter, resolve_brand,
     save_draft_body, scan_paths, set_status, slugify, strip_disclaimer_from_body, system_prompt,
     unique_draft_path, user_prompt, utc_today, word_count, write_draft_content, write_new_draft,
-    AppConfig,
-    Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta, FinalizeError, FrontValue,
-    GenerateError, GenerateRequest, LlmClient, LlmError, WriteNewDraft,
+    AppConfig, Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta, FinalizeError,
+    FrontValue, GenerateError, GenerateRequest, LlmClient, LlmError, WriteNewDraft,
 };
 
 create_exception!(

@@ -23,7 +23,9 @@ def test_brands_lists_example_writer() -> None:
 
 
 def test_generate_help_mentions_tone(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["generate", "--help"]) == 0
+    with pytest.raises(SystemExit) as exc:
+        main(["generate", "--help"])
+    assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "--tone" in out
     assert "--voice" in out

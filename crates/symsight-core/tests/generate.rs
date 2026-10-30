@@ -278,10 +278,9 @@ formats:
     assert!(call.user.contains("Tone briefing."));
     let text = fs::read_to_string(&draft).unwrap();
     assert!(text.contains("tone: \"briefing\""));
-    let meta: Value = serde_json::from_str(
-        &fs::read_to_string(draft.with_extension("meta.json")).unwrap(),
-    )
-    .unwrap();
+    let meta: Value =
+        serde_json::from_str(&fs::read_to_string(draft.with_extension("meta.json")).unwrap())
+            .unwrap();
     assert_eq!(meta["tone"], "briefing");
 }
 

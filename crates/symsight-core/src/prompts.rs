@@ -45,10 +45,7 @@ fn prompt_context(req: &GenerateRequest, today: &str) -> Result<PromptContext, G
     kwargs.insert("short_name", req.brand.short_name.clone());
     kwargs.insert("display_name", req.brand.display_name.clone());
     kwargs.insert("voice", req.brand.voice.trim().to_string());
-    kwargs.insert(
-        "tone",
-        tone_id.clone().unwrap_or_default(),
-    );
+    kwargs.insert("tone", tone_id.clone().unwrap_or_default());
     kwargs.insert("tone_instruction", tone_instruction.clone());
     let article_template = safe_format(&req.brand.formats.article.template, &kwargs)
         .trim()
@@ -71,7 +68,10 @@ fn tone_gap(ctx: &PromptContext) -> String {
     }
 }
 
-fn inject_article_template(req: &GenerateRequest, ctx: &PromptContext) -> Result<bool, GenerateError> {
+fn inject_article_template(
+    req: &GenerateRequest,
+    ctx: &PromptContext,
+) -> Result<bool, GenerateError> {
     if req.format != ContentFormat::Article || ctx.article_template.is_empty() {
         return Ok(false);
     }
@@ -208,10 +208,7 @@ fn rewrite_guidance(req: &GenerateRequest, today: &str) -> String {
     };
     let mut lines = Vec::new();
     if let Some(id) = &ctx.tone_id {
-        lines.push(format!(
-            "Keep the {id} tone: {}",
-            ctx.tone_instruction
-        ));
+        lines.push(format!("Keep the {id} tone: {}", ctx.tone_instruction));
     }
     if req.format == ContentFormat::Article && !ctx.article_template.is_empty() {
         lines.push(format!(
