@@ -1189,7 +1189,7 @@ dependencies = [
 name = "symsight-core"
 version = "0.2.4"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "chrono",
  "dirs",
  "dotenvy",
