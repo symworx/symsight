@@ -18,6 +18,7 @@ include = [
 ]
 
 [dependencies]
+base64 = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 dotenvy = { workspace = true }

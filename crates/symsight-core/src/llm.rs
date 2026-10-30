@@ -26,7 +26,7 @@ pub fn redact_secrets(text: &str) -> String {
     BEARER.replace_all(&text, "${1}[redacted]").into_owned()
 }
 
-fn validate_base_url(base: &str) -> Result<(), LlmError> {
+pub(crate) fn validate_base_url(base: &str) -> Result<(), LlmError> {
     let trimmed = base.trim();
     let lower = trimmed.to_ascii_lowercase();
     if lower.starts_with("https://") {

@@ -14,6 +14,7 @@ pub mod draft_io;
 pub mod error;
 pub mod finalize;
 pub mod generate;
+pub mod image;
 pub mod llm;
 pub mod models;
 pub mod prompts;
@@ -30,15 +31,21 @@ pub use draft_io::{
     save_draft_body, set_status, strip_disclaimer_from_body, unique_draft_path,
     write_draft_content, write_meta_json, write_new_draft, WriteNewDraft,
 };
-pub use error::{BrandError, ConfigError, FinalizeError, GenerateError, LlmError, TextError};
+pub use error::{
+    BrandError, ConfigError, FinalizeError, GenerateError, ImageError, LlmError, TextError,
+};
 pub use finalize::{finalize_draft, list_final};
 pub use generate::{generate_and_write, generate_content};
+pub use image::{
+    image_body, prepare_image_request, render_image, render_image_with_xai, ImageClient,
+    ImageOverrides, ImageRequest, ScriptedImageClient, XaiImageClient,
+};
 pub use llm::{
     redact_secrets, response_text, CompletionRequest, LlmClient, ScriptedClient, XaiClient,
 };
 pub use models::{
     ArticleFormatSpec, Brand, ContentFormat, Draft, DraftMeta, FormatSpecs, FrontValue,
-    GenerateRequest, SocialFormatSpec, TypeSpec,
+    GenerateRequest, ImageSpec, SocialFormatSpec, TypeSpec,
 };
 pub use prompts::{length_rewrite_prompt, safe_format, system_prompt, user_prompt};
 pub use textutil::{

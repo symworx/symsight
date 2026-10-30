@@ -19,11 +19,12 @@ use symsight_core::{
     char_count, check_path, check_text, clean_body, extract_social_text, extract_title_body,
     finalize_draft, find_hits, generate_and_write, generate_content, is_plausible_title,
     iter_scan_files, length_rewrite_prompt, list_brand_files, list_brands, list_drafts, list_final,
-    load_brand_file, parse_front_matter, read_draft, render_front_matter, resolve_brand,
-    save_draft_body, scan_paths, set_status, slugify, strip_disclaimer_from_body, system_prompt,
-    unique_draft_path, user_prompt, word_count, write_draft_content, write_new_draft, AppConfig,
-    Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta, FinalizeError, FrontValue,
-    GenerateError, GenerateRequest, LlmClient, LlmError, WriteNewDraft,
+    load_brand_file, parse_front_matter, read_draft, render_front_matter, render_image_with_xai,
+    resolve_brand, save_draft_body, scan_paths, set_status, slugify, strip_disclaimer_from_body,
+    system_prompt, unique_draft_path, user_prompt, word_count, write_draft_content,
+    write_new_draft, AppConfig, Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta,
+    FinalizeError, FrontValue, GenerateError, GenerateRequest, ImageError, ImageOverrides,
+    LlmClient, LlmError, WriteNewDraft,
 };
 
 create_exception!(
@@ -43,6 +44,12 @@ create_exception!(
     FinalizeErrorPy,
     pyo3::exceptions::PyException,
     "Finalize failure."
+);
+create_exception!(
+    _native,
+    ImageErrorPy,
+    pyo3::exceptions::PyException,
+    "Image generation failure."
 );
 
 fn pydantic_to<T: DeserializeOwned>(obj: &Bound<'_, PyAny>) -> PyResult<T> {
@@ -174,6 +181,10 @@ fn map_gen(err: GenerateError) -> PyErr {
 
 fn map_fin(err: FinalizeError) -> PyErr {
     FinalizeErrorPy::new_err(err.to_string())
+}
+
+fn map_image(err: ImageError) -> PyErr {
+    ImageErrorPy::new_err(err.to_string())
 }
 
 fn map_io(err: std::io::Error) -> PyErr {
@@ -605,6 +616,45 @@ fn make_client_py(_api_key: &str, _base_url: Option<&str>) -> PyResult<()> {
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(
+    name = "render_image",
+    signature = (brand, scene, dest, aspect=None, quality=None, model=None, api_key=None, base_url=None)
+)]
+fn render_image_py(
+    py: Python<'_>,
+    brand: Bound<'_, PyAny>,
+    scene: String,
+    dest: String,
+    aspect: Option<String>,
+    quality: Option<String>,
+    model: Option<String>,
+    api_key: Option<String>,
+    base_url: Option<String>,
+) -> PyResult<String> {
+    let brand = pydantic_to::<Brand>(&brand)?;
+    let api_key = api_key.unwrap_or_default();
+    let base_url = base_url.unwrap_or_else(|| "https://api.x.ai/v1".to_string());
+    let path = py
+        .detach(|| {
+            render_image_with_xai(
+                &brand,
+                &scene,
+                Path::new(&dest),
+                ImageOverrides {
+                    aspect: aspect.as_deref(),
+                    quality: quality.as_deref(),
+                    model: model.as_deref(),
+                },
+                &api_key,
+                &base_url,
+            )
+        })
+        .map_err(map_image)?;
+    Ok(path.display().to_string())
+}
+
+#[pyfunction]
 #[pyo3(name = "response_text")]
 fn response_text_py(response: Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(text) = response.getattr("output_text") {
@@ -623,6 +673,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BrandError", m.py().get_type::<BrandErrorPy>())?;
     m.add("GenerateError", m.py().get_type::<GenerateErrorPy>())?;
     m.add("FinalizeError", m.py().get_type::<FinalizeErrorPy>())?;
+    m.add("ImageError", m.py().get_type::<ImageErrorPy>())?;
     m.add_function(wrap_pyfunction!(word_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(char_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(slugify_py, m)?)?;
@@ -656,6 +707,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(list_final_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_content_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_and_write_py, m)?)?;
+    m.add_function(wrap_pyfunction!(render_image_py, m)?)?;
     m.add_function(wrap_pyfunction!(make_client_py, m)?)?;
     m.add_function(wrap_pyfunction!(response_text_py, m)?)?;
     Ok(())
