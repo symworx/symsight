@@ -30,6 +30,7 @@ def test_generate_help_mentions_tone(capsys: pytest.CaptureFixture[str]) -> None
     out = capsys.readouterr().out
     assert "--tone" in out
     assert "--voice" in out
+    assert "--context" in out
 
 
 def test_unknown_voice_alias_is_rejected(

@@ -38,6 +38,22 @@ def test_settings_uses_pydantic_model_copy(tmp_path: Path) -> None:
     assert screen.cfg.active_brand == "fixture-co"
 
 
+def test_context_status_lists_names_and_sizes(tmp_path: Path) -> None:
+    from symsight.tui.app import _context_file_args, _context_status
+
+    notes = tmp_path / "notes.md"
+    notes.write_text("abcd", encoding="utf-8")
+    assert _context_file_args(" notes.md , , sources/brief.md ") == [
+        "notes.md",
+        "sources/brief.md",
+    ]
+    assert _context_status([]) is None
+    status = _context_status([str(notes), "missing.md"])
+    assert status is not None
+    assert "notes.md, 4 bytes" in status
+    assert "missing.md" in status
+
+
 def test_tone_options_include_description() -> None:
     from symsight.models import Brand, ToneSpec
     from symsight.tui.app import _tone_options

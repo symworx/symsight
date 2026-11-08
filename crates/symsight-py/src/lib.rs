@@ -106,6 +106,11 @@ fn extract_req(obj: &Bound<'_, PyAny>) -> PyResult<GenerateRequest> {
     } else {
         None
     };
+    let context_files = if obj.hasattr("context_files")? {
+        extract_path_list(&obj.getattr("context_files")?)?
+    } else {
+        Vec::new()
+    };
     Ok(GenerateRequest {
         brand,
         type_id,
@@ -117,7 +122,19 @@ fn extract_req(obj: &Bound<'_, PyAny>) -> PyResult<GenerateRequest> {
         use_search,
         model,
         tone,
+        context_files,
     })
+}
+
+fn extract_path_list(obj: &Bound<'_, PyAny>) -> PyResult<Vec<PathBuf>> {
+    if obj.is_none() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for item in obj.try_iter()? {
+        out.push(path_from_py(&item?)?);
+    }
+    Ok(out)
 }
 
 fn extract_cfg(obj: &Bound<'_, PyAny>) -> PyResult<AppConfig> {

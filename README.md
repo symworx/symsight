@@ -58,6 +58,8 @@ uv run symsight generate --brand example-writer --type general --topic "deep wor
 # --voice is an alias of --tone. Omit it to use the brand default_tone.
 uv run symsight generate --brand example-writer --type general --topic "deep work" --tone briefing
 uv run symsight generate --type news --topic "semiconductors" --search
+# Attach a local note. The file must sit inside the project root.
+uv run symsight generate --type general --topic "deep work" --context notes/source.md
 
 # Social (≤ max chars, default 200 from brand)
 uv run symsight generate --format social --type social-tip --topic "one rebalancing tip" --max-chars 200

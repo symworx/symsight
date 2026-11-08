@@ -35,6 +35,27 @@ from symsight.models import Brand, ContentFormat, GenerateRequest
 from symsight.textutil import char_count, word_count
 
 
+def _context_file_args(raw: str) -> list[str]:
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _context_status(paths: list[str]) -> str | None:
+    """Names and sizes for the status line. The read itself happens in Rust."""
+    if not paths:
+        return None
+    parts: list[str] = []
+    for text in paths:
+        path = Path(text)
+        name = path.name or text
+        try:
+            size = path.stat().st_size
+        except OSError:
+            parts.append(name)
+        else:
+            parts.append(f"{name}, {size} bytes")
+    return "Generating with " + "; ".join(parts) + "…"
+
+
 def _tone_options(brand: Brand) -> list[tuple[str, str]]:
     options: list[tuple[str, str]] = []
     for tone_id, spec in brand.tones.items():
@@ -95,6 +116,8 @@ class GenerateScreen(ModalScreen[bool]):
             )
             yield Label("Topic (optional)")
             yield Input(placeholder="Focus topic…", id="gen-topic")
+            yield Label("Context files (optional, comma-separated)")
+            yield Input(placeholder="notes.md, sources/brief.md", id="gen-context")
             yield Label("Min words (article)")
             yield Input(
                 value=str(self.brand.formats.article.default_min_words),
@@ -140,6 +163,10 @@ class GenerateScreen(ModalScreen[bool]):
             type_id = str(self.query_one("#gen-type", Select).value)
             fmt = ContentFormat(str(self.query_one("#gen-format", Select).value))
             topic = self.query_one("#gen-topic", Input).value.strip() or None
+            context_files = _context_file_args(self.query_one("#gen-context", Input).value)
+            reading = _context_status(context_files)
+            if reading:
+                status(reading)
             min_w = int(self.query_one("#gen-min-words", Input).value or "0") or None
             max_w = int(self.query_one("#gen-max-words", Input).value or "0") or None
             max_c = int(self.query_one("#gen-max-chars", Input).value or "0") or None
@@ -165,6 +192,7 @@ class GenerateScreen(ModalScreen[bool]):
                 max_chars=max_c,
                 use_search=use_search,
                 tone=tone,
+                context_files=context_files,
             )
             path = generate_and_write(req, self.cfg)
             status(f"Wrote {path.name}")

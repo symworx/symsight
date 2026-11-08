@@ -55,6 +55,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Tone id from the brand (alias: --voice). Default: brand default_tone",
     )
+    g.add_argument(
+        "--context",
+        action="append",
+        default=None,
+        type=Path,
+        help="File to read into the prompt (repeatable). Must sit inside the project root.",
+    )
     g.add_argument("--drafts-dir", type=Path, default=None)
 
     # finalize
@@ -144,6 +151,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         use_search=_resolve_use_search(args),
         model=args.model,
         tone=args.tone,
+        context_files=[str(path) for path in (args.context or [])],
     )
     try:
         selected = req.resolved_tone()

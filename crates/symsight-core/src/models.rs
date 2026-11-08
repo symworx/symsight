@@ -252,6 +252,8 @@ pub struct GenerateRequest {
     pub model: Option<String>,
     /// Overrides [`Brand::default_tone`] when set to a non-empty id.
     pub tone: Option<String>,
+    /// Files to read into the prompt. Empty leaves the prompt unchanged.
+    pub context_files: Vec<std::path::PathBuf>,
 }
 
 impl GenerateRequest {
@@ -351,6 +353,9 @@ pub struct DraftMeta {
     pub generated_at: String,
     pub title: Option<String>,
     pub path: Option<String>,
+    /// Project-relative paths read into the prompt. Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_files: Vec<String>,
 }
 
 /// Scalar stored in hand-rolled draft front matter. Not a YAML AST.
@@ -473,7 +478,7 @@ mod tests {
 
     #[test]
     fn draft_meta_json_includes_nulls_and_renames_type() {
-        let meta = DraftMeta {
+        let mut meta = DraftMeta {
             model: "grok-4.5".into(),
             type_id: "general".into(),
             format: "article".into(),
@@ -486,6 +491,7 @@ mod tests {
             generated_at: "2026-08-15T00:00:00.000000+00:00".into(),
             title: None,
             path: None,
+            context_files: Vec::new(),
         };
         let json = serde_json::to_string_pretty(&meta).expect("serialize");
         assert!(json.contains("\"type\": \"general\""));
@@ -493,5 +499,11 @@ mod tests {
         assert!(json.contains("\"char_count\": null"));
         assert!(json.contains("\"word_count\": 12"));
         assert!(!json.contains("type_id"));
+        assert!(!json.contains("context_files"));
+
+        meta.context_files = vec!["notes.md".into()];
+        let json = serde_json::to_string_pretty(&meta).expect("serialize");
+        assert!(json.contains("\"context_files\""));
+        assert!(json.contains("notes.md"));
     }
 }

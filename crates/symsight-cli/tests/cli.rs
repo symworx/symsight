@@ -92,6 +92,28 @@ fn parse_generate_flag_matrix() {
 }
 
 #[test]
+fn parse_repeatable_context() {
+    let cli = Cli::try_parse_from([
+        "symsight",
+        "generate",
+        "--context",
+        "notes.md",
+        "--context",
+        "sources/brief.md",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Generate { context, .. } => {
+            assert_eq!(
+                context,
+                vec![PathBuf::from("notes.md"), PathBuf::from("sources/brief.md")]
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn parse_tone_and_voice_alias() {
     let by_tone = Cli::try_parse_from(["symsight", "generate", "--tone", "briefing"]).unwrap();
     match by_tone.command {

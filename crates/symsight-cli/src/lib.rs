@@ -81,6 +81,9 @@ pub enum Command {
         /// Tone id from the brand (alias: --voice). Default: brand default_tone
         #[arg(long, visible_alias = "voice")]
         tone: Option<String>,
+        /// File to read into the prompt (repeatable). Must sit inside the project root.
+        #[arg(long = "context")]
+        context: Vec<PathBuf>,
         #[arg(long)]
         drafts_dir: Option<PathBuf>,
     },
@@ -186,6 +189,7 @@ fn cmd_generate(cli: &Cli) -> i32 {
         no_search,
         model,
         tone,
+        context,
         drafts_dir,
     } = &cli.command
     else {
@@ -239,6 +243,7 @@ fn cmd_generate(cli: &Cli) -> i32 {
         use_search: resolve_use_search(*search, *no_search),
         model: model.clone(),
         tone: tone.clone(),
+        context_files: context.clone(),
     };
 
     let requested = tone.as_deref().map(str::trim).filter(|id| !id.is_empty());

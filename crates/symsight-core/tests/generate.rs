@@ -65,6 +65,7 @@ fn generate_article_scripted_writes_draft() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let path = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
     assert!(path.is_file());
@@ -92,6 +93,7 @@ fn generate_social_scripted_writes_draft() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let path = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
     assert!(fs::read_to_string(path).unwrap().contains("short tip"));
@@ -115,6 +117,7 @@ fn article_rewrites_when_too_short() {
         use_search: Some(true),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     generate_content(&req, &cfg, Some(&client)).unwrap();
     assert_eq!(client.call_count(), 2);
@@ -144,6 +147,7 @@ fn article_rewrites_implausible_title_then_falls_back() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let (title, _, _) = generate_content(&req, &cfg, Some(&client)).unwrap();
     assert_eq!(title, "Testing");
@@ -168,6 +172,7 @@ fn social_rewrites_when_over_max_chars() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let (_, body, _) = generate_content(&req, &cfg, Some(&client)).unwrap();
     assert_eq!(body, "short ok");
@@ -196,6 +201,7 @@ fn forbidden_term_fails_generation() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
     match err {
@@ -221,6 +227,7 @@ fn empty_model_response_is_error() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
     assert!(matches!(err, GenerateError::Empty));
@@ -270,6 +277,7 @@ formats:
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let draft = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
     let call = client.calls.lock().unwrap()[0].clone();
@@ -302,6 +310,7 @@ fn unknown_tone_fails_before_the_model() {
         use_search: Some(false),
         model: None,
         tone: Some("missing".into()),
+        context_files: Vec::new(),
     };
     let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
     match err {
@@ -311,6 +320,63 @@ fn unknown_tone_fails_before_the_model() {
         }
         other => panic!("unexpected {other}"),
     }
+    assert_eq!(client.call_count(), 0);
+}
+
+#[test]
+fn context_file_is_in_the_prompt_and_the_meta() {
+    let root = tmp_dir();
+    fs::write(root.join("notes.md"), "A concrete note about widgets.\n").unwrap();
+    let brand = load_brand_file(repo_root().join("tests/fixtures/fixture-co.yaml")).unwrap();
+    let client = ScriptedClient::new(vec![article_words(60)]);
+    let cfg = test_cfg(&root);
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: Some("testing".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: Some(false),
+        model: None,
+        tone: None,
+        context_files: vec![root.join("notes.md")],
+    };
+    let path = generate_and_write(&req, &cfg, None, Some(&client)).unwrap();
+    let call = client.calls.lock().unwrap()[0].clone();
+    assert!(call.user.contains("A concrete note about widgets."));
+    assert!(call.user.contains("## notes.md"));
+    assert_eq!(client.call_count(), 1);
+    let meta: Value =
+        serde_json::from_str(&fs::read_to_string(path.with_extension("meta.json")).unwrap())
+            .unwrap();
+    assert_eq!(meta["context_files"][0], "notes.md");
+}
+
+#[test]
+fn denied_context_file_does_not_call_the_model() {
+    let root = tmp_dir();
+    fs::write(root.join(".env"), "XAI_API_KEY=secret").unwrap();
+    let brand = load_brand_file(repo_root().join("tests/fixtures/fixture-co.yaml")).unwrap();
+    let client = ScriptedClient::new(vec![article_words(60)]);
+    let cfg = test_cfg(&root);
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: Some("testing".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: Some(false),
+        model: None,
+        tone: None,
+        context_files: vec![root.join(".env")],
+    };
+    let err = generate_content(&req, &cfg, Some(&client)).unwrap_err();
+    assert!(err.to_string().contains("denied"), "{err}");
+    assert!(!err.to_string().contains("secret"), "{err}");
     assert_eq!(client.call_count(), 0);
 }
 
