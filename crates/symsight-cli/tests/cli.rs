@@ -247,69 +247,100 @@ fn execute_brands_and_check() {
 }
 
 #[test]
-fn execute_setup_local_and_remote() {
+fn execute_create_and_delete_leave_env_alone() {
     let root = tmp_dir();
-    let local = Cli::try_parse_from([
+    let create = Cli::try_parse_from([
         "symsight",
         "--config-root",
         root.to_str().unwrap(),
-        "setup",
-        "--local",
-        "--base-url",
-        "http://127.0.0.1:11434/v1",
-        "--model",
-        "llama3.2",
+        "create",
     ])
     .unwrap();
-    assert_eq!(symsight_cli::execute(local), 0);
+    assert_eq!(symsight_cli::execute(create), 0);
     let text = fs::read_to_string(root.join(".symsight.toml")).unwrap();
-    assert!(text.contains("http://127.0.0.1:11434/v1"), "{text}");
-    assert!(text.contains("llama3.2"), "{text}");
+    assert!(text.contains("https://api.x.ai/v1"), "{text}");
+    assert!(text.contains("example-writer"), "{text}");
     assert!(!root.join(".env").exists());
 
-    let secret = "unit-test-key";
-    let remote = Cli::try_parse_from([
+    fs::write(root.join(".symsight.toml"), "kept = true\n").unwrap();
+    let again = Cli::try_parse_from([
         "symsight",
         "--config-root",
         root.to_str().unwrap(),
-        "setup",
-        "--remote",
-        "--api-key",
-        secret,
+        "create",
     ])
     .unwrap();
-    assert_eq!(symsight_cli::execute(remote), 0);
-    let env = fs::read_to_string(root.join(".env")).unwrap();
-    assert!(env.contains(&format!("XAI_API_KEY={secret}")), "{env}");
-    let toml = fs::read_to_string(root.join(".symsight.toml")).unwrap();
-    assert!(toml.contains("https://api.x.ai/v1"), "{toml}");
-    assert!(!toml.contains(secret), "{toml}");
+    assert_eq!(symsight_cli::execute(again), 0);
+    assert_eq!(
+        fs::read_to_string(root.join(".symsight.toml")).unwrap(),
+        "kept = true\n"
+    );
 
-    let both = Cli::try_parse_from([
-        "symsight",
-        "--config-root",
-        root.to_str().unwrap(),
-        "setup",
-        "--local",
-        "--remote",
-        "--model",
-        "llama3.2",
-    ])
-    .unwrap();
-    assert_eq!(symsight_cli::execute(both), 1);
-
-    // A tty would prompt for a model id. Only the non-interactive path is asserted here.
+    fs::write(root.join(".env"), "XAI_API_KEY=unit-test-key\n").unwrap();
+    // A terminal would prompt. Only the non-interactive path is asserted here.
     if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-        let missing_model = Cli::try_parse_from([
+        let setup =
+            Cli::try_parse_from(["symsight", "--config-root", root.to_str().unwrap(), "setup"])
+                .unwrap();
+        assert_eq!(symsight_cli::execute(setup), 0);
+        assert_eq!(
+            fs::read_to_string(root.join(".symsight.toml")).unwrap(),
+            "kept = true\n"
+        );
+        let refused = Cli::try_parse_from([
             "symsight",
             "--config-root",
             root.to_str().unwrap(),
-            "setup",
-            "--local",
+            "delete",
         ])
         .unwrap();
-        assert_eq!(symsight_cli::execute(missing_model), 1);
+        assert_eq!(symsight_cli::execute(refused), 1);
+        assert!(root.join(".symsight.toml").is_file());
     }
+
+    let removed = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "delete",
+        "--yes",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(removed), 0);
+    assert!(!root.join(".symsight.toml").exists());
+    assert!(root.join(".env").is_file());
+
+    let missing = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "delete",
+        "--yes",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(missing), 1);
+    assert!(root.join(".env").is_file());
+}
+
+#[test]
+fn parse_generate_local_and_hides_file_shortcuts_from_the_command_list() {
+    let cli = Cli::try_parse_from(["symsight", "generate", "--local", "--topic", "x"]).unwrap();
+    match cli.command {
+        Command::Generate { local, .. } => assert!(local),
+        other => panic!("{other:?}"),
+    }
+
+    use clap::CommandFactory;
+    let mut cmd = Cli::command();
+    let mut buf = Vec::new();
+    cmd.write_long_help(&mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    let commands = text.split("Project file:").next().unwrap_or(&text);
+    assert!(commands.contains("setup"), "{text}");
+    assert!(!commands.contains("\n  create "), "{text}");
+    assert!(text.contains("create   Write .symsight.toml"), "{text}");
+    assert!(text.contains("edit     Open .symsight.toml"), "{text}");
+    assert!(text.contains("delete   Remove .symsight.toml"), "{text}");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Nathaniel T. Berry
 # Licensed under the Apache License, Version 2.0.
-"""TUI import / construct smoke — no live Textual run, no live HTTP."""
+"""TUI import smoke and a headless check that the settings panel tracks the screen."""
 
 from __future__ import annotations
 
@@ -27,6 +27,24 @@ def test_symsight_app_constructs(tmp_path: Path) -> None:
     assert app.cfg.drafts_dir == cfg.drafts_dir
     assert app.current_path is None
     assert app.brand is None
+
+
+def test_settings_panel_is_a_fraction_of_the_screen(tmp_path: Path) -> None:
+    import asyncio
+
+    cfg = _cfg(tmp_path)
+
+    async def check(width: int, height: int) -> None:
+        app = SymsightApp(cfg)
+        async with app.run_test(size=(width, height)) as pilot:
+            app.push_screen(SettingsScreen(cfg))
+            await pilot.pause()
+            dialog = app.screen.query_one("#set-dialog")
+            assert dialog.outer_size.width == width * 80 // 100
+            assert dialog.outer_size.height == height * 80 // 100
+
+    asyncio.run(check(100, 40))
+    asyncio.run(check(160, 50))
 
 
 def test_settings_uses_pydantic_model_copy(tmp_path: Path) -> None:

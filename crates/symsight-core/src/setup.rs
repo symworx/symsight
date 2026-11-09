@@ -1,20 +1,251 @@
 // Copyright (c) 2026, Nathaniel T. Berry
 // Licensed under the Apache License, Version 2.0.
 
-//! Write project model settings. The API key goes only to `.env`.
+//! Project file for `symsight setup`, plus the older model-settings writer.
+//! The API key still goes only to `.env` when `apply_setup` is called.
 
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::config::{save_project_config, AppConfig};
+use crate::config::{save_project_config, AppConfig, DEFAULT_LOCAL_BASE_URL};
 use crate::error::SetupError;
 use crate::llm::{blocking_client, is_loopback_base_url, redact_secrets, validate_base_url};
 
 const MODEL_LIST_TIMEOUT: Duration = Duration::from_secs(5);
+
+const ACTIONS: [&str; 4] = ["new", "edit", "delete", "quit"];
+
+/// Starter `.symsight.toml`. Same text as `config/.symsight.toml.example`.
+pub const STARTER_PROJECT_CONFIG: &str = "\
+# Copy to .symsight.toml in the project root (or ~/.config/symsight/config.toml).\n\
+\n\
+active_brand = \"example-writer\"\n\
+brands_dir = \"./config/brands\"\n\
+drafts_dir = \"./content/drafts\"\n\
+final_dir = \"./content/final\"\n\
+model = \"grok-4.5\"\n\
+base_url = \"https://api.x.ai/v1\"\n\
+";
+
+/// `{root}/.symsight.toml`.
+pub fn project_config_path(root: &Path) -> PathBuf {
+    root.join(".symsight.toml")
+}
+
+/// Result of `create`. An existing file is left as it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateProjectConfig {
+    Created(PathBuf),
+    AlreadyThere(PathBuf),
+}
+
+impl CreateProjectConfig {
+    pub fn message(&self) -> String {
+        match self {
+            Self::Created(path) => format!("created: {}", path.display()),
+            Self::AlreadyThere(_) => {
+                ".symsight.toml was not replaced. Edit it with `symsight edit`.".to_string()
+            }
+        }
+    }
+}
+
+/// Write the starter project file. Does not replace a file that is already there.
+pub fn create_project_config(root: &Path) -> Result<CreateProjectConfig, SetupError> {
+    let dest = project_config_path(root);
+    if dest.exists() {
+        return Ok(CreateProjectConfig::AlreadyThere(dest));
+    }
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&dest)
+    {
+        Ok(mut file) => {
+            file.write_all(STARTER_PROJECT_CONFIG.as_bytes())?;
+            Ok(CreateProjectConfig::Created(dest))
+        }
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+            Ok(CreateProjectConfig::AlreadyThere(dest))
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// `$VISUAL`, then `$EDITOR`. Empty values are skipped.
+pub fn preferred_editor(visual: Option<&str>, editor: Option<&str>) -> Option<String> {
+    nonempty(visual).or_else(|| nonempty(editor))
+}
+
+fn nonempty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+/// Open `.symsight.toml` in `editor`. The program name is not split on spaces.
+pub fn edit_project_config(root: &Path, editor: Option<&str>) -> Result<PathBuf, SetupError> {
+    let dest = project_config_path(root);
+    if !dest.is_file() {
+        return Err(SetupError::Message(
+            ".symsight.toml is missing. Write it with `symsight create`.".into(),
+        ));
+    }
+    let Some(editor) = editor.map(str::trim).filter(|text| !text.is_empty()) else {
+        return Err(SetupError::Message("set VISUAL or EDITOR".into()));
+    };
+    let status = Command::new(editor).arg(&dest).status()?;
+    if !status.success() {
+        return Err(SetupError::Message(format!("editor failed ({status})")));
+    }
+    Ok(dest)
+}
+
+/// Remove `.symsight.toml` only. `.env` is left in place.
+pub fn delete_project_config(root: &Path) -> Result<PathBuf, SetupError> {
+    let dest = project_config_path(root);
+    if !dest.is_file() {
+        return Err(SetupError::Message(
+            ".symsight.toml is missing. Nothing to delete.".into(),
+        ));
+    }
+    fs::remove_file(&dest)?;
+    Ok(dest)
+}
+
+/// `y`, `Y`, `yes`, or `YES`.
+pub fn delete_confirmed(answer: &str) -> bool {
+    matches!(answer.trim(), "y" | "Y" | "yes" | "YES")
+}
+
+/// Non-interactive `symsight setup` text.
+pub fn setup_shortcut_text(root: &Path) -> String {
+    let path = project_config_path(root);
+    format!(
+        "File: {}\nnew:    symsight create\nedit:   symsight edit\ndelete: symsight delete\n",
+        path.display()
+    )
+}
+
+/// Interactive menu header. `arrows` adds the key line used by the Python TTY menu.
+pub fn setup_menu_header(root: &Path, arrows: bool) -> String {
+    let path = project_config_path(root);
+    let mut text = format!(
+        "File: {}\n\nShortcuts: symsight create, symsight edit, symsight delete\n\n",
+        path.display()
+    );
+    if arrows {
+        text.push_str("Arrow keys move. Enter selects. q or Ctrl-C quits.\n\n");
+    }
+    text
+}
+
+/// Line menu. With `interactive` false, print the shortcuts and return.
+/// Pass `editor` in from the caller so tests do not change the process environment.
+pub fn run_setup_lines(
+    root: &Path,
+    interactive: bool,
+    editor: Option<&str>,
+    reader: &mut impl BufRead,
+    out: &mut impl Write,
+) -> Result<(), SetupError> {
+    if !interactive {
+        write!(out, "{}", setup_shortcut_text(root))?;
+        return Ok(());
+    }
+    write!(out, "{}", setup_menu_header(root, false))?;
+    loop {
+        for action in ACTIONS {
+            writeln!(out, "{action}")?;
+        }
+        let choice = prompt_line(out, reader, "> ")?.to_ascii_lowercase();
+        match choice.as_str() {
+            "new" => report_create(root, out)?,
+            "edit" => report_edit(root, editor, out)?,
+            "delete" => line_delete(root, reader, out)?,
+            "quit" | "q" | "" => return Ok(()),
+            other => writeln!(out, "choose new, edit, delete, or quit (got '{other}')")?,
+        }
+    }
+}
+
+/// Base URL for one `generate` run. `--local` points a remote URL at the
+/// default localhost server and leaves a localhost URL, including its port, as saved.
+pub fn generate_base_url(configured: &str, local: bool) -> String {
+    if local && !is_loopback_base_url(configured) {
+        DEFAULT_LOCAL_BASE_URL.to_string()
+    } else {
+        configured.to_string()
+    }
+}
+
+fn report_create(root: &Path, out: &mut impl Write) -> Result<(), SetupError> {
+    match create_project_config(root) {
+        Ok(outcome) => writeln!(out, "{}", outcome.message())?,
+        Err(err) => writeln!(out, "error: {err}")?,
+    }
+    Ok(())
+}
+
+fn report_edit(root: &Path, editor: Option<&str>, out: &mut impl Write) -> Result<(), SetupError> {
+    match edit_project_config(root, editor) {
+        Ok(path) => writeln!(out, "edited: {}", path.display())?,
+        Err(err) => writeln!(out, "error: {err}")?,
+    }
+    Ok(())
+}
+
+fn line_delete(
+    root: &Path,
+    reader: &mut impl BufRead,
+    out: &mut impl Write,
+) -> Result<(), SetupError> {
+    let path = project_config_path(root);
+    if !confirm_delete(&path, reader, out)? {
+        writeln!(out, ">>> delete cancelled")?;
+        return Ok(());
+    }
+    match delete_project_config(root) {
+        Ok(path) => writeln!(out, "deleted: {}", path.display())?,
+        Err(err) => writeln!(out, "error: {err}")?,
+    }
+    Ok(())
+}
+
+fn confirm_delete(
+    path: &Path,
+    reader: &mut impl BufRead,
+    out: &mut impl Write,
+) -> Result<bool, SetupError> {
+    write!(out, "Delete {}? [y/N] ", path.display())?;
+    out.flush()?;
+    let mut answer = String::new();
+    reader.read_line(&mut answer)?;
+    Ok(delete_confirmed(&answer))
+}
+
+fn prompt_line(
+    out: &mut impl Write,
+    reader: &mut impl BufRead,
+    label: &str,
+) -> Result<String, SetupError> {
+    write!(out, "{label}")?;
+    out.flush()?;
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    Ok(line.trim().to_string())
+}
 
 /// What `symsight setup` should store. `api_key` is remote-only.
 /// `None` leaves `.env` alone. A local request rejects a non-empty key.
@@ -241,7 +472,7 @@ fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::DEFAULT_BASE_URL;
+    use crate::config::{DEFAULT_BASE_URL, DEFAULT_LOCAL_BASE_URL};
     use serde_json::json;
 
     fn tmp_dir() -> PathBuf {
@@ -440,5 +671,222 @@ mod tests {
         assert!(err.to_string().contains("single line"), "{err}");
         assert!(!root.join(".env").exists());
         assert!(!root.join(".symsight.toml").exists());
+    }
+
+    #[test]
+    fn starter_matches_the_example_when_present() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/.symsight.toml.example");
+        let Ok(example) = fs::read_to_string(&path) else {
+            return;
+        };
+        assert_eq!(example, STARTER_PROJECT_CONFIG);
+    }
+
+    #[test]
+    fn create_writes_the_starter_and_does_not_replace_it() {
+        let root = tmp_dir();
+        let created = create_project_config(&root).unwrap();
+        assert!(matches!(created, CreateProjectConfig::Created(_)));
+        assert!(
+            created.message().starts_with("created: "),
+            "{}",
+            created.message()
+        );
+        assert_eq!(
+            fs::read_to_string(project_config_path(&root)).unwrap(),
+            STARTER_PROJECT_CONFIG
+        );
+        fs::write(project_config_path(&root), "kept = true\n").unwrap();
+        let again = create_project_config(&root).unwrap();
+        assert!(matches!(again, CreateProjectConfig::AlreadyThere(_)));
+        assert!(
+            again.message().contains("was not replaced"),
+            "{}",
+            again.message()
+        );
+        assert_eq!(
+            fs::read_to_string(project_config_path(&root)).unwrap(),
+            "kept = true\n"
+        );
+        assert!(!root.join(".env").exists());
+    }
+
+    #[test]
+    fn edit_requires_a_file_and_an_editor() {
+        let root = tmp_dir();
+        let missing = edit_project_config(&root, Some("/bin/true")).unwrap_err();
+        assert!(missing.to_string().contains("symsight create"), "{missing}");
+        create_project_config(&root).unwrap();
+        let no_editor = edit_project_config(&root, None).unwrap_err();
+        assert!(
+            no_editor.to_string().contains("VISUAL or EDITOR"),
+            "{no_editor}"
+        );
+        let empty = edit_project_config(&root, Some("  ")).unwrap_err();
+        assert!(empty.to_string().contains("VISUAL or EDITOR"), "{empty}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn edit_runs_the_program_on_the_file_and_reports_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tmp_dir();
+        create_project_config(&root).unwrap();
+        let script = root.join("mark-editor.sh");
+        fs::write(&script, "#!/bin/sh\necho marked >> \"$1\"\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = edit_project_config(&root, Some(script.to_str().unwrap())).unwrap();
+        assert_eq!(path, project_config_path(&root));
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("marked"), "{text}");
+        let failed = edit_project_config(&root, Some("/bin/false")).unwrap_err();
+        assert!(failed.to_string().contains("editor failed"), "{failed}");
+    }
+
+    #[test]
+    fn delete_removes_only_the_project_file() {
+        let root = tmp_dir();
+        let missing = delete_project_config(&root).unwrap_err();
+        assert!(
+            missing.to_string().contains("Nothing to delete"),
+            "{missing}"
+        );
+        create_project_config(&root).unwrap();
+        fs::write(root.join(".env"), "XAI_API_KEY=unit-test-key\n").unwrap();
+        let path = delete_project_config(&root).unwrap();
+        assert_eq!(path, project_config_path(&root));
+        assert!(!path.exists());
+        assert!(root.join(".env").is_file());
+    }
+
+    #[test]
+    fn delete_answers() {
+        assert!(delete_confirmed("y"));
+        assert!(delete_confirmed(" Y "));
+        assert!(delete_confirmed("yes"));
+        assert!(delete_confirmed("YES"));
+        assert!(!delete_confirmed(""));
+        assert!(!delete_confirmed("n"));
+        assert!(!delete_confirmed("yeah"));
+    }
+
+    #[test]
+    fn generate_local_flag_switches_only_a_remote_url() {
+        assert_eq!(
+            generate_base_url("https://api.x.ai/v1", true),
+            DEFAULT_LOCAL_BASE_URL
+        );
+        assert_eq!(
+            generate_base_url("http://127.0.0.1:9999/v1", true),
+            "http://127.0.0.1:9999/v1"
+        );
+        assert_eq!(
+            generate_base_url("https://api.x.ai/v1", false),
+            "https://api.x.ai/v1"
+        );
+        assert_eq!(
+            generate_base_url("http://localhost:11434/v1", false),
+            "http://localhost:11434/v1"
+        );
+    }
+
+    #[test]
+    fn visual_wins_over_editor() {
+        assert_eq!(
+            preferred_editor(Some("vim"), Some("nano")).as_deref(),
+            Some("vim")
+        );
+        assert_eq!(
+            preferred_editor(Some("  "), Some("nano")).as_deref(),
+            Some("nano")
+        );
+        assert_eq!(preferred_editor(None, Some("")).as_deref(), None);
+    }
+
+    #[test]
+    fn plain_setup_prints_shortcuts_and_exits() {
+        use std::io::Cursor;
+        let root = tmp_dir();
+        let mut input = Cursor::new("new\n");
+        let mut out = Vec::new();
+        run_setup_lines(&root, false, None, &mut input, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text, setup_shortcut_text(&root));
+        assert!(text.contains("new:    symsight create\n"), "{text}");
+        assert!(text.contains("edit:   symsight edit\n"), "{text}");
+        assert!(text.contains("delete: symsight delete\n"), "{text}");
+        assert!(!text.contains("> "), "{text}");
+        assert!(!project_config_path(&root).exists());
+    }
+
+    #[test]
+    fn line_menu_rejects_unknown_then_quits() {
+        use std::io::Cursor;
+        let root = tmp_dir();
+        let mut input = Cursor::new("create\nq\n");
+        let mut out = Vec::new();
+        run_setup_lines(&root, true, None, &mut input, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("Shortcuts: symsight create, symsight edit, symsight delete"),
+            "{text}"
+        );
+        assert!(
+            text.contains("choose new, edit, delete, or quit (got 'create')"),
+            "{text}"
+        );
+        assert!(!project_config_path(&root).exists());
+    }
+
+    #[test]
+    fn line_menu_new_then_quit_writes_the_starter() {
+        use std::io::Cursor;
+        let root = tmp_dir();
+        let mut input = Cursor::new("new\nquit\n");
+        let mut out = Vec::new();
+        run_setup_lines(&root, true, None, &mut input, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("created: "), "{text}");
+        assert_eq!(
+            fs::read_to_string(project_config_path(&root)).unwrap(),
+            STARTER_PROJECT_CONFIG
+        );
+    }
+
+    #[test]
+    fn line_menu_delete_asks_and_leaves_env() {
+        use std::io::Cursor;
+        let root = tmp_dir();
+        create_project_config(&root).unwrap();
+        fs::write(root.join(".env"), "XAI_API_KEY=unit-test-key\n").unwrap();
+        let mut cancelled = Cursor::new("delete\nn\nquit\n");
+        let mut out = Vec::new();
+        run_setup_lines(&root, true, None, &mut cancelled, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains(">>> delete cancelled"), "{text}");
+        assert!(project_config_path(&root).is_file());
+
+        let mut confirmed = Cursor::new("delete\ny\nquit\n");
+        let mut out = Vec::new();
+        run_setup_lines(&root, true, None, &mut confirmed, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("deleted: "), "{text}");
+        assert!(!project_config_path(&root).exists());
+        assert!(root.join(".env").is_file());
+    }
+
+    #[test]
+    fn line_menu_edit_reports_a_missing_file() {
+        use std::io::Cursor;
+        let root = tmp_dir();
+        let mut input = Cursor::new("edit\n\n");
+        let mut out = Vec::new();
+        run_setup_lines(&root, true, None, &mut input, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("error: .symsight.toml is missing. Write it with `symsight create`."),
+            "{text}"
+        );
     }
 }

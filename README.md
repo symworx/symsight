@@ -13,7 +13,17 @@ uv run symsight setup
 # or: cp .env.example .env and set XAI_API_KEY from https://console.x.ai
 ```
 
-`setup` writes the model and base URL to `.symsight.toml`. The default is the hosted xAI API. A localhost URL uses a local model and does not call web search. Images still use xAI and need `XAI_API_KEY`. The key is stored only in the gitignored `.env` file.
+`setup` is the menu for `.symsight.toml`. With `uv run symsight setup` in a terminal, the arrow keys move between `new`, `edit`, `delete`, and `quit`. Enter selects. `q` or Ctrl-C quits. The native `symsight` binary uses a line prompt for the same choices. Without a terminal it prints the shortcuts and exits:
+
+```bash
+uv run symsight create
+uv run symsight edit
+uv run symsight delete
+```
+
+`create` writes a starter `.symsight.toml` and leaves a file that is already there. `edit` opens it in `$VISUAL` or `$EDITOR`. `delete` removes that file. On a terminal it asks first. Without a terminal, pass `--yes`.
+
+The starter file points at the hosted xAI API (`https://api.x.ai/v1`, model `grok-4.5`). A localhost base URL uses a local model and skips web search. `symsight generate --local` points that one run at `http://127.0.0.1:11434/v1` when the saved URL is a remote host. A saved localhost URL, including a custom port, stays as written. Pass `--model` to name the local model. The command does not change `.symsight.toml`. Images still use xAI and need `XAI_API_KEY` in the gitignored `.env` file.
 
 The domain core is Rust (`symsight._native`). The Python package is the `uv run symsight` CLI and Textual TUI.
 
@@ -56,12 +66,16 @@ uv run symsight brands
 ## CLI
 
 ```bash
-# Save model and base URL. Add --local for a server on this machine.
+# Menu for .symsight.toml. Shortcuts: create, edit, delete.
 uv run symsight setup
-uv run symsight setup --local --base-url http://127.0.0.1:11434/v1 --model llama3.2
+uv run symsight create
+uv run symsight edit
+uv run symsight delete --yes
 
 # Article (default type = first type on brand if omitted)
 uv run symsight generate --brand example-writer --type general --topic "deep work"
+# One run on a local model. Add --model when the saved id is a hosted model.
+uv run symsight generate --type general --topic "deep work" --local --model llama3.2
 # --voice is an alias of --tone. Omit it to use the brand default_tone.
 uv run symsight generate --brand example-writer --type general --topic "deep work" --tone briefing
 uv run symsight generate --type news --topic "semiconductors" --search

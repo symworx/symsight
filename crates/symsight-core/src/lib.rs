@@ -55,7 +55,12 @@ pub use models::{
     GenerateRequest, ImageSpec, SocialFormatSpec, ToneSpec, TypeSpec,
 };
 pub use prompts::{length_rewrite_prompt, safe_format, system_prompt, user_prompt, utc_today};
-pub use setup::{apply_setup, list_model_ids, SetupReport, SetupRequest};
+pub use setup::{
+    apply_setup, create_project_config, delete_confirmed, delete_project_config,
+    edit_project_config, generate_base_url, list_model_ids, preferred_editor, project_config_path,
+    run_setup_lines, setup_menu_header, setup_shortcut_text, CreateProjectConfig, SetupReport,
+    SetupRequest, STARTER_PROJECT_CONFIG,
+};
 pub use textutil::{
     char_count, clean_body, extract_social_text, extract_title_body, is_plausible_title,
     is_safe_path_component, slugify, word_count,

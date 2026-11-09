@@ -10,24 +10,37 @@ from pathlib import Path
 
 from symsight.brand import BrandError, list_brands, resolve_brand
 from symsight.brandcheck import scan_paths
-from symsight.config import (
-    DEFAULT_BASE_URL,
-    DEFAULT_LOCAL_BASE_URL,
-    DEFAULT_MODEL,
-    AppConfig,
-    get_config,
-)
+from symsight.config import get_config
 from symsight.finalize import FinalizeError, finalize_draft
 from symsight.generate import GenerateError, generate_and_write
 from symsight.image import ImageError, render_image
 from symsight.models import ContentFormat, GenerateRequest
-from symsight.setup import apply_setup, list_model_ids
+from symsight.setup import (
+    create_project_config,
+    delete_confirmed,
+    delete_project_config,
+    edit_project_config,
+    generate_base_url,
+    preferred_editor,
+    project_config_path,
+    run_setup,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="symsight",
         description="Brand-agnostic insight generator (articles & social posts)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Project file:\n"
+            "  .symsight.toml in the project root.\n"
+            "\n"
+            "  setup    Menu for that file. Arrow keys choose new, edit, delete, or quit\n"
+            "  create   Write .symsight.toml. Shortcut for new\n"
+            "  edit     Open .symsight.toml in $VISUAL or $EDITOR. Shortcut for edit\n"
+            "  delete   Remove .symsight.toml. Shortcut for delete\n"
+        ),
     )
     parser.add_argument(
         "--config-root",
@@ -55,6 +68,14 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--search", action="store_true", default=None, help="Force web_search on")
     g.add_argument("--no-search", action="store_true", help="Disable web_search")
     g.add_argument("--model", default=None, help="Override model id")
+    g.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Use a localhost model for this run. Keeps a saved localhost URL. "
+            "Does not change .symsight.toml."
+        ),
+    )
     g.add_argument(
         "--tone",
         "--voice",
@@ -100,24 +121,15 @@ def _build_parser() -> argparse.ArgumentParser:
     image.add_argument("--brand", default=None, help="Brand id (default: active_brand from config)")
     image.add_argument("--brand-file", type=Path, default=None, help="Path to brand YAML")
 
-    # setup
-    setup = sub.add_parser("setup", help="Save the model and base URL for this project")
-    setup.add_argument(
-        "--local",
+    # setup / project file
+    sub.add_parser("setup", help="Menu for .symsight.toml (new, edit, delete, quit)")
+    sub.add_parser("create", help=argparse.SUPPRESS)
+    sub.add_parser("edit", help=argparse.SUPPRESS)
+    delete = sub.add_parser("delete", help=argparse.SUPPRESS)
+    delete.add_argument(
+        "--yes",
         action="store_true",
-        help="Use a localhost OpenAI-compatible model",
-    )
-    setup.add_argument("--remote", action="store_true", help="Use the hosted xAI API")
-    setup.add_argument(
-        "--base-url",
-        default=None,
-        help="API base URL (default depends on --local / --remote)",
-    )
-    setup.add_argument("--model", default=None, help="Model id")
-    setup.add_argument(
-        "--api-key",
-        default=None,
-        help="Remote XAI_API_KEY. Prefer the hidden prompt; this flag is stored in shell history.",
+        help="Delete without asking. Required when stdin is not a terminal.",
     )
 
     # tui
@@ -147,6 +159,8 @@ def cmd_generate(args: argparse.Namespace) -> int:
     if args.model:
         overrides["model"] = args.model
     cfg = get_config(root=args.config_root, overrides=overrides or None)
+    if args.local:
+        cfg = cfg.model_copy(update={"base_url": generate_base_url(cfg.base_url, True)})
 
     try:
         brand = resolve_brand(
@@ -354,139 +368,58 @@ def cmd_image(args: argparse.Namespace) -> int:
     return 0
 
 
-def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
-
-
-def _prompt(text: str) -> str:
-    try:
-        return input(text).strip()
-    except EOFError:
-        return ""
-
-
-def _setup_choice(args: argparse.Namespace) -> bool | None:
-    """Return True for local, False for remote, or None when the answer is unusable."""
-    if args.local and args.remote:
-        print("pass only one of --local or --remote", file=sys.stderr)
-        return None
-    if args.local:
-        return True
-    if args.remote:
-        return False
-    if not _stdin_is_tty():
-        print("pass --remote or --local", file=sys.stderr)
-        return None
-    answer = _prompt("Write with a remote xAI model or a local model? [remote]: ").lower()
-    if answer in {"", "remote", "r"}:
-        return False
-    if answer in {"local", "l"}:
-        return True
-    print("answer remote or local", file=sys.stderr)
-    return None
-
-
-def _local_model(base_url: str, model: str | None) -> tuple[str, bool] | None:
-    if model:
-        return model, False
-    if not _stdin_is_tty():
-        print("pass --model", file=sys.stderr)
-        return None
-    try:
-        ids = list_model_ids(base_url)
-    except (RuntimeError, OSError) as exc:
-        print(f"Could not list models at {base_url}: {exc}", file=sys.stderr)
-        answer = _prompt("Model id: ")
-        if not answer:
-            print("pass --model", file=sys.stderr)
-            return None
-        return answer, True
-    if ids:
-        for index, model_id in enumerate(ids, start=1):
-            print(f"  {index}. {model_id}")
-        default = ids[0]
-        answer = _prompt(f"Model [{default}]: ")
-        if not answer:
-            return default, False
-        if answer.isdigit():
-            number = int(answer)
-            if 1 <= number <= len(ids):
-                return ids[number - 1], False
-        return answer, False
-    print(f"No models reported at {base_url}.", file=sys.stderr)
-    answer = _prompt("Model id: ")
-    if not answer:
-        print("pass --model", file=sys.stderr)
-        return None
-    return answer, False
-
-
-def _remote_api_key(args: argparse.Namespace, cfg: AppConfig) -> str | None:
-    """Return the key to write, or None to leave ``.env`` alone.
-
-    Prints an error and returns the sentinel ``""`` only when setup must stop.
-    A non-empty existing config key is left untouched.
-    """
-    if args.api_key is not None:
-        if not str(args.api_key).strip():
-            print("API key is empty", file=sys.stderr)
-            return ""
-        return str(args.api_key)
-    if cfg.xai_api_key.strip():
-        return None
-    if _stdin_is_tty():
-        import getpass
-
-        key = getpass.getpass("XAI_API_KEY: ")
-        if not key.strip():
-            print("set XAI_API_KEY or pass --api-key", file=sys.stderr)
-            return ""
-        return key
-    print("set XAI_API_KEY or pass --api-key", file=sys.stderr)
-    return ""
-
-
-def _print_setup(report: dict[str, object], *, server_down: bool) -> None:
-    print(f"Saved {report['config_path']}")
-    print(f"Model: {report['model']}")
-    print(f"Base URL: {report['base_url']}")
-    if report["local"]:
-        print("Web search is unavailable on a local model. Images still use xAI.")
-    if server_down:
-        print("Generate will fail until the server is running.")
-    print('symsight generate --type general --topic "your topic"')
+def _project_root(args: argparse.Namespace) -> Path:
+    return get_config(root=args.config_root).project_root
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    local = _setup_choice(args)
-    if local is None:
-        return 1
-    cfg = get_config(root=args.config_root)
-    server_down = False
-    if local:
-        if args.api_key:
-            print("local setup does not take an API key", file=sys.stderr)
-            return 1
-        base_url = args.base_url or DEFAULT_LOCAL_BASE_URL
-        picked = _local_model(base_url, args.model)
-        if picked is None:
-            return 1
-        model, server_down = picked
-        api_key = None
-    else:
-        base_url = args.base_url or DEFAULT_BASE_URL
-        model = args.model or DEFAULT_MODEL
-        api_key = _remote_api_key(args, cfg)
-        if api_key == "":
-            return 1
     try:
-        report = apply_setup(
-            cfg, local=local, base_url=base_url, model=model, api_key=api_key
-        )
+        run_setup(_project_root(args))
     except (RuntimeError, OSError) as exc:
         print(exc, file=sys.stderr)
         return 1
-    _print_setup(report, server_down=server_down)
+    return 0
+
+
+def cmd_create(args: argparse.Namespace) -> int:
+    try:
+        print(create_project_config(_project_root(args)))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_edit(args: argparse.Namespace) -> int:
+    try:
+        print(edit_project_config(_project_root(args), preferred_editor()))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    from symsight import setup as setup_mod
+
+    root = _project_root(args)
+    if not args.yes:
+        if not setup_mod.stdin_is_tty():
+            print("pass --yes to delete .symsight.toml", file=sys.stderr)
+            return 1
+        path = project_config_path(root)
+        try:
+            answer = input(f"Delete {path}? [y/N] ")
+        except EOFError:
+            answer = ""
+        if not delete_confirmed(answer):
+            print(">>> delete cancelled")
+            return 0
+    try:
+        print(delete_project_config(root))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
     return 0
 
 
@@ -521,6 +454,9 @@ def main(argv: list[str] | None = None) -> int:
         "brands": cmd_brands,
         "image": cmd_image,
         "setup": cmd_setup,
+        "create": cmd_create,
+        "edit": cmd_edit,
+        "delete": cmd_delete,
         "tui": cmd_tui,
     }
     return handlers[args.command](args)

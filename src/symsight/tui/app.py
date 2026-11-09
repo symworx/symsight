@@ -209,8 +209,9 @@ class SettingsScreen(ModalScreen[bool]):
     CSS = """
     SettingsScreen { align: center middle; }
     #set-dialog {
-        width: 80;
-        height: auto;
+        width: 80%;
+        height: 80%;
+        overflow-y: auto;
         border: thick $accent;
         background: $surface;
         padding: 1 2;

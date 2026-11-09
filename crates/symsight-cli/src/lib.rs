@@ -9,17 +9,27 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use symsight_core::{
-    apply_setup, finalize_draft, generate_and_write, get_config, list_brands, list_model_ids,
-    prepare_image_request, render_image_with_xai, resolve_brand, scan_paths, AppConfig,
-    ConfigOverrides, ContentFormat, GenerateRequest, ImageOverrides, SetupRequest,
-    DEFAULT_BASE_URL, DEFAULT_LOCAL_BASE_URL, DEFAULT_MODEL,
+    create_project_config, delete_confirmed, delete_project_config, edit_project_config,
+    finalize_draft, generate_and_write, generate_base_url, get_config, list_brands,
+    preferred_editor, prepare_image_request, project_config_path, render_image_with_xai,
+    resolve_brand, run_setup_lines, scan_paths, ConfigOverrides, ContentFormat, GenerateRequest,
+    ImageOverrides,
 };
 
 #[derive(Debug, Parser)]
 #[command(
     name = "symsight",
     version,
-    about = "Brand-agnostic insight generator (articles & social posts)"
+    about = "Brand-agnostic insight generator (articles & social posts)",
+    after_help = "\
+Project file:
+  .symsight.toml in the project root.
+
+  setup    Menu for that file. Choose new, edit, delete, or quit
+  create   Write .symsight.toml. Shortcut for new
+  edit     Open .symsight.toml in $VISUAL or $EDITOR. Shortcut for edit
+  delete   Remove .symsight.toml. Shortcut for delete. Pass --yes when stdin is not a terminal
+"
 )]
 pub struct Cli {
     /// Project root for config resolution (default: auto)
@@ -79,6 +89,9 @@ pub enum Command {
         /// Override model id
         #[arg(long)]
         model: Option<String>,
+        /// Use a localhost model for this run. Keeps a saved localhost URL.
+        #[arg(long)]
+        local: bool,
         /// Tone id from the brand (alias: --voice). Default: brand default_tone
         #[arg(long, visible_alias = "voice")]
         tone: Option<String>,
@@ -142,23 +155,20 @@ pub enum Command {
         #[arg(long)]
         brand_file: Option<PathBuf>,
     },
-    /// Save the model and base URL for this project
-    Setup {
-        /// Use a localhost OpenAI-compatible model
+    /// Menu for .symsight.toml. This binary prompts for new, edit, delete, or quit.
+    Setup,
+    /// Write .symsight.toml. Shortcut for the new choice in `setup`
+    #[command(hide = true)]
+    Create,
+    /// Open .symsight.toml. Shortcut for the edit choice in `setup`
+    #[command(hide = true)]
+    Edit,
+    /// Remove .symsight.toml. Shortcut for the delete choice in `setup`
+    #[command(hide = true)]
+    Delete {
+        /// Delete without asking. Required when stdin is not a terminal.
         #[arg(long)]
-        local: bool,
-        /// Use the hosted xAI API
-        #[arg(long)]
-        remote: bool,
-        /// API base URL (default depends on --local / --remote)
-        #[arg(long)]
-        base_url: Option<String>,
-        /// Model id
-        #[arg(long)]
-        model: Option<String>,
-        /// Remote XAI_API_KEY. Prefer `uv run symsight setup`; this flag lands in shell history.
-        #[arg(long)]
-        api_key: Option<String>,
+        yes: bool,
     },
     /// Launch the Textual TUI
     Tui {
@@ -190,7 +200,10 @@ pub fn execute(cli: Cli) -> i32 {
         Command::Check { .. } => cmd_check(&cli),
         Command::Brands { .. } => cmd_brands(&cli),
         Command::Image { .. } => cmd_image(&cli),
-        Command::Setup { .. } => cmd_setup(&cli),
+        Command::Setup => cmd_setup(&cli),
+        Command::Create => cmd_create(&cli),
+        Command::Edit => cmd_edit(&cli),
+        Command::Delete { .. } => cmd_delete(&cli),
         Command::Tui { .. } => cmd_tui(),
     }
 }
@@ -208,6 +221,7 @@ fn cmd_generate(cli: &Cli) -> i32 {
         search,
         no_search,
         model,
+        local,
         tone,
         context,
         drafts_dir,
@@ -226,7 +240,10 @@ fn cmd_generate(cli: &Cli) -> i32 {
     if let Some(m) = model {
         overrides.model = Some(m.clone());
     }
-    let cfg = get_config(cli.config_root.as_deref(), Some(&overrides));
+    let mut cfg = get_config(cli.config_root.as_deref(), Some(&overrides));
+    if *local {
+        cfg.base_url = generate_base_url(&cfg.base_url, true);
+    }
 
     let brand = match resolve_brand(
         &cfg.brands_dir,
@@ -529,39 +546,40 @@ fn cmd_image(cli: &Cli) -> i32 {
     0
 }
 
+fn project_root(cli: &Cli) -> PathBuf {
+    get_config(cli.config_root.as_deref(), None).project_root
+}
+
+fn current_editor() -> Option<String> {
+    let visual = std::env::var("VISUAL").ok();
+    let editor = std::env::var("EDITOR").ok();
+    preferred_editor(visual.as_deref(), editor.as_deref())
+}
+
 fn cmd_setup(cli: &Cli) -> i32 {
-    let Command::Setup {
-        local,
-        remote,
-        base_url,
-        model,
-        api_key,
-    } = &cli.command
-    else {
-        unreachable!();
-    };
-    if *local && *remote {
-        eprintln!("pass only one of --local or --remote");
-        return 1;
+    let root = project_root(cli);
+    let interactive = io::stdin().is_terminal();
+    let editor = current_editor();
+    let mut stdin = io::stdin().lock();
+    match run_setup_lines(
+        &root,
+        interactive,
+        editor.as_deref(),
+        &mut stdin,
+        &mut io::stdout(),
+    ) {
+        Ok(()) => 0,
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
     }
-    let choice = match setup_choice(*local, *remote) {
-        Ok(choice) => choice,
-        Err(msg) => {
-            eprintln!("{msg}");
-            return 1;
-        }
-    };
-    let cfg = get_config(cli.config_root.as_deref(), None);
-    let prepared = match prepare_setup(&cfg, choice, base_url, model, api_key) {
-        Ok(prepared) => prepared,
-        Err(msg) => {
-            eprintln!("{msg}");
-            return 1;
-        }
-    };
-    match apply_setup(&cfg, &prepared.request) {
-        Ok(report) => {
-            print_setup_report(&report, prepared.server_down);
+}
+
+fn cmd_create(cli: &Cli) -> i32 {
+    match create_project_config(&project_root(cli)) {
+        Ok(outcome) => {
+            println!("{}", outcome.message());
             0
         }
         Err(err) => {
@@ -571,163 +589,73 @@ fn cmd_setup(cli: &Cli) -> i32 {
     }
 }
 
-enum SetupChoice {
-    Local,
-    Remote,
-}
-
-struct PreparedSetup {
-    request: SetupRequest,
-    server_down: bool,
-}
-
-fn setup_choice(local: bool, remote: bool) -> Result<SetupChoice, String> {
-    if local {
-        return Ok(SetupChoice::Local);
-    }
-    if remote {
-        return Ok(SetupChoice::Remote);
-    }
-    if !io::stdin().is_terminal() {
-        return Err("pass --remote or --local".into());
-    }
-    let answer = prompt_line("Write with a remote xAI model or a local model? [remote]: ")?;
-    match answer.to_ascii_lowercase().as_str() {
-        "" | "remote" | "r" => Ok(SetupChoice::Remote),
-        "local" | "l" => Ok(SetupChoice::Local),
-        _ => Err("answer remote or local".into()),
-    }
-}
-
-fn prepare_setup(
-    cfg: &AppConfig,
-    choice: SetupChoice,
-    base_url: &Option<String>,
-    model: &Option<String>,
-    api_key: &Option<String>,
-) -> Result<PreparedSetup, String> {
-    match choice {
-        SetupChoice::Local => prepare_local(base_url, model, api_key),
-        SetupChoice::Remote => prepare_remote(cfg, base_url, model, api_key),
-    }
-}
-
-fn prepare_local(
-    base_url: &Option<String>,
-    model: &Option<String>,
-    api_key: &Option<String>,
-) -> Result<PreparedSetup, String> {
-    if api_key.as_deref().is_some_and(|key| !key.trim().is_empty()) {
-        return Err("local setup does not take an API key".into());
-    }
-    let base_url = base_url
-        .clone()
-        .unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string());
-    let (model, server_down) = match model.clone() {
-        Some(model) => (model, false),
-        None => pick_local_model(&base_url)?,
-    };
-    Ok(PreparedSetup {
-        request: SetupRequest {
-            local: true,
-            base_url,
-            model,
-            api_key: None,
-        },
-        server_down,
-    })
-}
-
-fn pick_local_model(base_url: &str) -> Result<(String, bool), String> {
-    if !io::stdin().is_terminal() {
-        return Err("pass --model".into());
-    }
-    match list_model_ids(base_url) {
-        Ok(ids) if !ids.is_empty() => {
-            for (index, id) in ids.iter().enumerate() {
-                println!("  {}. {id}", index + 1);
-            }
-            let default = ids[0].clone();
-            let answer = prompt_line(&format!("Model [{default}]: "))?;
-            if answer.is_empty() {
-                return Ok((default, false));
-            }
-            if let Ok(n) = answer.parse::<usize>() {
-                if (1..=ids.len()).contains(&n) {
-                    return Ok((ids[n - 1].clone(), false));
-                }
-            }
-            Ok((answer, false))
-        }
-        Ok(_) => {
-            eprintln!("No models reported at {base_url}.");
-            let answer = prompt_line("Model id: ")?;
-            if answer.is_empty() {
-                return Err("pass --model".into());
-            }
-            Ok((answer, false))
+fn cmd_edit(cli: &Cli) -> i32 {
+    let editor = current_editor();
+    match edit_project_config(&project_root(cli), editor.as_deref()) {
+        Ok(path) => {
+            println!("edited: {}", path.display());
+            0
         }
         Err(err) => {
-            eprintln!("Could not list models at {base_url}: {err}");
-            let answer = prompt_line("Model id: ")?;
-            if answer.is_empty() {
-                return Err("pass --model".into());
-            }
-            Ok((answer, true))
+            eprintln!("{err}");
+            1
         }
     }
 }
 
-fn prepare_remote(
-    cfg: &AppConfig,
-    base_url: &Option<String>,
-    model: &Option<String>,
-    api_key: &Option<String>,
-) -> Result<PreparedSetup, String> {
-    let base_url = base_url
-        .clone()
-        .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
-    let model = model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
-    let api_key = resolve_remote_key(cfg, api_key)?;
-    Ok(PreparedSetup {
-        request: SetupRequest {
-            local: false,
-            base_url,
-            model,
-            api_key,
-        },
-        server_down: false,
-    })
-}
-
-fn resolve_remote_key(cfg: &AppConfig, flag: &Option<String>) -> Result<Option<String>, String> {
-    if let Some(key) = flag {
-        if key.trim().is_empty() {
-            return Err("API key is empty".into());
+fn cmd_delete(cli: &Cli) -> i32 {
+    let Command::Delete { yes } = &cli.command else {
+        unreachable!();
+    };
+    let root = project_root(cli);
+    if !yes {
+        match confirm_delete_shortcut(&root) {
+            DeleteGate::Proceed => {}
+            DeleteGate::Cancel => return 0,
+            DeleteGate::Stop => return 1,
         }
-        return Ok(Some(key.clone()));
     }
-    if !cfg.xai_api_key.trim().is_empty() {
-        return Ok(None);
+    match delete_project_config(&root) {
+        Ok(path) => {
+            println!("deleted: {}", path.display());
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
     }
-    Err("set XAI_API_KEY or pass --api-key. For a hidden prompt, run: uv run symsight setup".into())
 }
 
-fn print_setup_report(report: &symsight_core::SetupReport, server_down: bool) {
-    println!("Saved {}", report.config_path.display());
-    println!("Model: {}", report.model);
-    println!("Base URL: {}", report.base_url);
-    if report.local {
-        println!("Web search is unavailable on a local model. Images still use xAI.");
-    }
-    if server_down {
-        println!("Generate will fail until the server is running.");
-    }
-    println!("symsight generate --type general --topic \"your topic\"");
+enum DeleteGate {
+    Proceed,
+    Cancel,
+    Stop,
 }
 
-fn prompt_line(question: &str) -> Result<String, String> {
-    print!("{question}");
+/// Ask on a terminal. Off a terminal, require `--yes` and leave the file.
+fn confirm_delete_shortcut(root: &Path) -> DeleteGate {
+    let path = project_config_path(root);
+    if !io::stdin().is_terminal() {
+        eprintln!("pass --yes to delete .symsight.toml");
+        return DeleteGate::Stop;
+    }
+    let answer = match prompt_stdin(&format!("Delete {}? [y/N] ", path.display())) {
+        Ok(answer) => answer,
+        Err(err) => {
+            eprintln!("{err}");
+            return DeleteGate::Stop;
+        }
+    };
+    if delete_confirmed(&answer) {
+        return DeleteGate::Proceed;
+    }
+    println!(">>> delete cancelled");
+    DeleteGate::Cancel
+}
+
+fn prompt_stdin(label: &str) -> Result<String, String> {
+    print!("{label}");
     io::stdout().flush().map_err(|err| err.to_string())?;
     let mut line = String::new();
     io::stdin()
