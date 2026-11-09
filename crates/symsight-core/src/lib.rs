@@ -5,10 +5,12 @@
 //!
 //! Python remains the user-facing implementation until later PRs land
 //! bindings. This crate currently owns brand models, YAML loading, textutil,
-//! draft I/O, finalize, brandcheck, config, prompts, and generate.
+//! draft I/O, finalize, brandcheck, config, prompts, generate, the tool-turn
+//! loop (no tools registered), a localhost chat session, and project setup.
 
 pub mod brand;
 pub mod brandcheck;
+pub mod chat;
 pub mod config;
 pub mod draft_io;
 pub mod error;
@@ -18,13 +20,15 @@ pub mod image;
 pub mod llm;
 pub mod models;
 pub mod prompts;
+pub mod setup;
 pub mod textutil;
+pub mod tools;
 
 pub use brand::{list_brand_files, list_brands, load_brand_file, resolve_brand};
 pub use brandcheck::{check_path, check_text, find_hits, iter_scan_files, scan_paths};
 pub use config::{
     find_project_root, get_config, save_project_config, AppConfig, ConfigOverrides,
-    DEFAULT_BASE_URL, DEFAULT_MODEL,
+    DEFAULT_BASE_URL, DEFAULT_LOCAL_BASE_URL, DEFAULT_MODEL,
 };
 pub use draft_io::{
     draft_meta_json, list_drafts, parse_front_matter, read_draft, render_front_matter,
@@ -32,7 +36,8 @@ pub use draft_io::{
     write_draft_content, write_meta_json, write_new_draft, WriteNewDraft,
 };
 pub use error::{
-    BrandError, ConfigError, FinalizeError, GenerateError, ImageError, LlmError, TextError,
+    BrandError, ConfigError, ContextError, FinalizeError, GenerateError, ImageError, LlmError,
+    SetupError, TextError, ToolError,
 };
 pub use finalize::{finalize_draft, list_final};
 pub use generate::{generate_and_write, generate_content};
@@ -41,16 +46,28 @@ pub use image::{
     ImageOverrides, ImageRequest, ScriptedImageClient, XaiImageClient,
 };
 pub use llm::{
-    redact_secrets, response_text, CompletionRequest, LlmClient, ScriptedClient, XaiClient,
+    is_loopback_base_url, parse_turn, redact_secrets, response_text, CompletionRequest,
+    FunctionTool, LlmClient, LlmSession, ModelTurn, OneShotSession, ScriptedClient,
+    ScriptedSession, ToolCall, ToolResult, XaiClient,
 };
 pub use models::{
     ArticleFormatSpec, Brand, ContentFormat, Draft, DraftMeta, FormatSpecs, FrontValue,
     GenerateRequest, ImageSpec, SocialFormatSpec, ToneSpec, TypeSpec,
 };
 pub use prompts::{length_rewrite_prompt, safe_format, system_prompt, user_prompt, utc_today};
+pub use setup::{
+    apply_setup, create_project_config, delete_confirmed, delete_project_config,
+    edit_project_config, generate_base_url, list_model_ids, preferred_editor, project_config_path,
+    run_setup_lines, setup_menu_header, setup_shortcut_text, CreateProjectConfig, SetupReport,
+    SetupRequest, STARTER_PROJECT_CONFIG,
+};
 pub use textutil::{
     char_count, clean_body, extract_social_text, extract_title_body, is_plausible_title,
     is_safe_path_component, slugify, word_count,
+};
+pub use tools::{
+    context_block, load_context_files, run_to_message, ContextFile, Tool, ToolPolicy, ToolRegistry,
+    DEFAULT_MAX_CONTEXT_BYTES, DEFAULT_MAX_TURNS, DEFAULT_TOTAL_CONTEXT_BYTES,
 };
 
 /// Workspace package version, single-sourced from the root `Cargo.toml`.

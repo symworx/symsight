@@ -35,6 +35,27 @@ from symsight.models import Brand, ContentFormat, GenerateRequest
 from symsight.textutil import char_count, word_count
 
 
+def _context_file_args(raw: str) -> list[str]:
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _context_status(paths: list[str]) -> str | None:
+    """Names and sizes for the status line. The read itself happens in Rust."""
+    if not paths:
+        return None
+    parts: list[str] = []
+    for text in paths:
+        path = Path(text)
+        name = path.name or text
+        try:
+            size = path.stat().st_size
+        except OSError:
+            parts.append(name)
+        else:
+            parts.append(f"{name}, {size} bytes")
+    return "Generating with " + "; ".join(parts) + "…"
+
+
 def _tone_options(brand: Brand) -> list[tuple[str, str]]:
     options: list[tuple[str, str]] = []
     for tone_id, spec in brand.tones.items():
@@ -95,6 +116,8 @@ class GenerateScreen(ModalScreen[bool]):
             )
             yield Label("Topic (optional)")
             yield Input(placeholder="Focus topic…", id="gen-topic")
+            yield Label("Context files (optional, comma-separated)")
+            yield Input(placeholder="notes.md, sources/brief.md", id="gen-context")
             yield Label("Min words (article)")
             yield Input(
                 value=str(self.brand.formats.article.default_min_words),
@@ -140,6 +163,10 @@ class GenerateScreen(ModalScreen[bool]):
             type_id = str(self.query_one("#gen-type", Select).value)
             fmt = ContentFormat(str(self.query_one("#gen-format", Select).value))
             topic = self.query_one("#gen-topic", Input).value.strip() or None
+            context_files = _context_file_args(self.query_one("#gen-context", Input).value)
+            reading = _context_status(context_files)
+            if reading:
+                status(reading)
             min_w = int(self.query_one("#gen-min-words", Input).value or "0") or None
             max_w = int(self.query_one("#gen-max-words", Input).value or "0") or None
             max_c = int(self.query_one("#gen-max-chars", Input).value or "0") or None
@@ -165,6 +192,7 @@ class GenerateScreen(ModalScreen[bool]):
                 max_chars=max_c,
                 use_search=use_search,
                 tone=tone,
+                context_files=context_files,
             )
             path = generate_and_write(req, self.cfg)
             status(f"Wrote {path.name}")
@@ -176,13 +204,14 @@ class GenerateScreen(ModalScreen[bool]):
 
 
 class SettingsScreen(ModalScreen[bool]):
-    """Edit drafts/final dirs and active brand."""
+    """Edit dirs, the active brand, the model, and the base URL."""
 
     CSS = """
     SettingsScreen { align: center middle; }
     #set-dialog {
-        width: 80;
-        height: auto;
+        width: 80%;
+        height: 80%;
+        overflow-y: auto;
         border: thick $accent;
         background: $surface;
         padding: 1 2;
@@ -217,6 +246,11 @@ class SettingsScreen(ModalScreen[bool]):
             )
             yield Label("Brands directory")
             yield Input(value=str(self.cfg.brands_dir), id="set-brands-dir")
+            yield Label("Model")
+            yield Input(value=self.cfg.model, id="set-model")
+            yield Label("Base URL")
+            yield Input(value=self.cfg.base_url, id="set-base-url")
+            yield Label("A localhost URL uses a local model and skips web search.")
             with Horizontal(id="set-actions"):
                 yield Button("Cancel", id="set-cancel")
                 yield Button("Save", variant="primary", id="set-save")
@@ -231,16 +265,24 @@ class SettingsScreen(ModalScreen[bool]):
         final = Path(self.query_one("#set-final", Input).value).expanduser()
         brands_dir = Path(self.query_one("#set-brands-dir", Input).value).expanduser()
         brand = str(self.query_one("#set-brand", Select).value)
-        self.cfg = self.cfg.model_copy(
-            update={
-                "drafts_dir": drafts if drafts.is_absolute() else (self.cfg.project_root / drafts).resolve(),
-                "final_dir": final if final.is_absolute() else (self.cfg.project_root / final).resolve(),
-                "brands_dir": brands_dir
-                if brands_dir.is_absolute()
-                else (self.cfg.project_root / brands_dir).resolve(),
-                "active_brand": brand,
-            }
-        )
+        model = self.query_one("#set-model", Input).value.strip()
+        base_url = self.query_one("#set-base-url", Input).value.strip()
+        def under_root(path: Path) -> Path:
+            if path.is_absolute():
+                return path
+            return (self.cfg.project_root / path).resolve()
+
+        update: dict[str, object] = {
+            "drafts_dir": under_root(drafts),
+            "final_dir": under_root(final),
+            "brands_dir": under_root(brands_dir),
+            "active_brand": brand,
+        }
+        if model:
+            update["model"] = model
+        if base_url:
+            update["base_url"] = base_url
+        self.cfg = self.cfg.model_copy(update=update)
         save_project_config(self.cfg)
         # stash on app
         app = self.app

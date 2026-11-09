@@ -19,6 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover — py<3.11
 
 DEFAULT_MODEL = "grok-4.5"
 DEFAULT_BASE_URL = "https://api.x.ai/v1"
+DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
 
 
 def find_project_root(start: Path | None = None) -> Path:

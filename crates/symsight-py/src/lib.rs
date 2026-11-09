@@ -16,15 +16,17 @@ use pyo3::types::{PyAny, PyDict, PyList, PyModule};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use symsight_core::{
-    char_count, check_path, check_text, clean_body, extract_social_text, extract_title_body,
-    finalize_draft, find_hits, generate_and_write, generate_content, is_plausible_title,
-    iter_scan_files, length_rewrite_prompt, list_brand_files, list_brands, list_drafts, list_final,
-    load_brand_file, parse_front_matter, read_draft, render_front_matter, render_image_with_xai,
-    resolve_brand, save_draft_body, scan_paths, set_status, slugify, strip_disclaimer_from_body,
-    system_prompt, unique_draft_path, user_prompt, utc_today, word_count, write_draft_content,
-    write_new_draft, AppConfig, Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta,
-    FinalizeError, FrontValue, GenerateError, GenerateRequest, ImageError, ImageOverrides,
-    LlmClient, LlmError, WriteNewDraft,
+    apply_setup, char_count, check_path, check_text, clean_body, create_project_config,
+    delete_confirmed, delete_project_config, edit_project_config, extract_social_text,
+    extract_title_body, finalize_draft, find_hits, generate_and_write, generate_base_url,
+    generate_content, is_plausible_title, iter_scan_files, length_rewrite_prompt, list_brand_files,
+    list_brands, list_drafts, list_final, list_model_ids, load_brand_file, parse_front_matter,
+    preferred_editor, project_config_path, read_draft, render_front_matter, render_image_with_xai,
+    resolve_brand, save_draft_body, scan_paths, set_status, setup_menu_header, setup_shortcut_text,
+    slugify, strip_disclaimer_from_body, system_prompt, unique_draft_path, user_prompt, utc_today,
+    word_count, write_draft_content, write_new_draft, AppConfig, Brand, BrandError,
+    CompletionRequest, ContentFormat, DraftMeta, FinalizeError, FrontValue, GenerateError,
+    GenerateRequest, ImageError, ImageOverrides, LlmClient, LlmError, SetupRequest, WriteNewDraft,
 };
 
 create_exception!(
@@ -106,6 +108,11 @@ fn extract_req(obj: &Bound<'_, PyAny>) -> PyResult<GenerateRequest> {
     } else {
         None
     };
+    let context_files = if obj.hasattr("context_files")? {
+        extract_path_list(&obj.getattr("context_files")?)?
+    } else {
+        Vec::new()
+    };
     Ok(GenerateRequest {
         brand,
         type_id,
@@ -117,7 +124,19 @@ fn extract_req(obj: &Bound<'_, PyAny>) -> PyResult<GenerateRequest> {
         use_search,
         model,
         tone,
+        context_files,
     })
+}
+
+fn extract_path_list(obj: &Bound<'_, PyAny>) -> PyResult<Vec<PathBuf>> {
+    if obj.is_none() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for item in obj.try_iter()? {
+        out.push(path_from_py(&item?)?);
+    }
+    Ok(out)
 }
 
 fn extract_cfg(obj: &Bound<'_, PyAny>) -> PyResult<AppConfig> {
@@ -670,6 +689,118 @@ fn render_image_py(
 }
 
 #[pyfunction]
+#[pyo3(name = "apply_setup", signature = (cfg, local, base_url, model, api_key=None))]
+fn apply_setup_py(
+    py: Python<'_>,
+    cfg: Bound<'_, PyAny>,
+    local: bool,
+    base_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> PyResult<Py<PyDict>> {
+    let cfg = extract_cfg(&cfg)?;
+    let report = py
+        .detach(|| {
+            apply_setup(
+                &cfg,
+                &SetupRequest {
+                    local,
+                    base_url,
+                    model,
+                    api_key,
+                },
+            )
+        })
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let dict = PyDict::new(py);
+    dict.set_item("config_path", report.config_path.display().to_string())?;
+    if let Some(path) = report.env_path {
+        dict.set_item("env_path", path.display().to_string())?;
+    } else {
+        dict.set_item("env_path", py.None())?;
+    }
+    dict.set_item("base_url", report.base_url)?;
+    dict.set_item("model", report.model)?;
+    dict.set_item("local", report.local)?;
+    dict.set_item("wrote_api_key", report.wrote_api_key)?;
+    Ok(dict.unbind())
+}
+
+#[pyfunction]
+#[pyo3(name = "list_model_ids")]
+fn list_model_ids_py(py: Python<'_>, base_url: String) -> PyResult<Vec<String>> {
+    py.detach(|| list_model_ids(&base_url))
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+}
+
+#[pyfunction]
+#[pyo3(name = "create_project_config")]
+fn create_project_config_py(py: Python<'_>, root: String) -> PyResult<String> {
+    let outcome = py
+        .detach(|| create_project_config(Path::new(&root)))
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    Ok(outcome.message())
+}
+
+#[pyfunction]
+#[pyo3(name = "edit_project_config", signature = (root, editor=None))]
+fn edit_project_config_py(
+    py: Python<'_>,
+    root: String,
+    editor: Option<String>,
+) -> PyResult<String> {
+    let path = py
+        .detach(|| edit_project_config(Path::new(&root), editor.as_deref()))
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    Ok(format!("edited: {}", path.display()))
+}
+
+#[pyfunction]
+#[pyo3(name = "delete_project_config")]
+fn delete_project_config_py(py: Python<'_>, root: String) -> PyResult<String> {
+    let path = py
+        .detach(|| delete_project_config(Path::new(&root)))
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    Ok(format!("deleted: {}", path.display()))
+}
+
+#[pyfunction]
+#[pyo3(name = "project_config_path")]
+fn project_config_path_py(root: String) -> String {
+    project_config_path(Path::new(&root)).display().to_string()
+}
+
+#[pyfunction]
+#[pyo3(name = "preferred_editor", signature = (visual=None, editor=None))]
+fn preferred_editor_py(visual: Option<String>, editor: Option<String>) -> Option<String> {
+    preferred_editor(visual.as_deref(), editor.as_deref())
+}
+
+#[pyfunction]
+#[pyo3(name = "delete_confirmed")]
+fn delete_confirmed_py(answer: String) -> bool {
+    delete_confirmed(&answer)
+}
+
+#[pyfunction]
+#[pyo3(name = "setup_shortcut_text")]
+fn setup_shortcut_text_py(root: String) -> String {
+    setup_shortcut_text(Path::new(&root))
+}
+
+#[pyfunction]
+#[pyo3(name = "setup_menu_header")]
+fn setup_menu_header_py(root: String, arrows: bool) -> String {
+    setup_menu_header(Path::new(&root), arrows)
+}
+
+#[pyfunction]
+#[pyo3(name = "generate_base_url")]
+fn generate_base_url_py(configured: String, local: bool) -> String {
+    generate_base_url(&configured, local)
+}
+
+#[pyfunction]
 #[pyo3(name = "response_text")]
 fn response_text_py(response: Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(text) = response.getattr("output_text") {
@@ -724,6 +855,17 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_and_write_py, m)?)?;
     m.add_function(wrap_pyfunction!(render_image_py, m)?)?;
     m.add_function(wrap_pyfunction!(make_client_py, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_setup_py, m)?)?;
+    m.add_function(wrap_pyfunction!(list_model_ids_py, m)?)?;
+    m.add_function(wrap_pyfunction!(create_project_config_py, m)?)?;
+    m.add_function(wrap_pyfunction!(edit_project_config_py, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_project_config_py, m)?)?;
+    m.add_function(wrap_pyfunction!(project_config_path_py, m)?)?;
+    m.add_function(wrap_pyfunction!(preferred_editor_py, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_confirmed_py, m)?)?;
+    m.add_function(wrap_pyfunction!(setup_shortcut_text_py, m)?)?;
+    m.add_function(wrap_pyfunction!(setup_menu_header_py, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_base_url_py, m)?)?;
     m.add_function(wrap_pyfunction!(response_text_py, m)?)?;
     Ok(())
 }

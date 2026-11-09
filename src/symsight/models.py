@@ -98,6 +98,7 @@ class GenerateRequest(BaseModel):
     use_search: bool | None = None
     model: str | None = None
     tone: str | None = None
+    context_files: list[str] = Field(default_factory=list)
 
     def resolved_type(self) -> TypeSpec:
         if self.type_id not in self.brand.types:
@@ -158,6 +159,7 @@ class DraftMeta(BaseModel):
     generated_at: str
     title: str | None = None
     path: str | None = None
+    context_files: list[str] = Field(default_factory=list)
 
 
 class Draft(BaseModel):

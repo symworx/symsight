@@ -18,6 +18,7 @@ use crate::error::ConfigError;
 
 pub const DEFAULT_MODEL: &str = "grok-4.5";
 pub const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
+pub const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11434/v1";
 
 /// Walk up from `start` (or cwd) looking for `pyproject.toml`, `.symsight.toml`,
 /// or `config/brands/`.

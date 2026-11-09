@@ -59,6 +59,44 @@ pub enum LlmError {
     Http(String),
 }
 
+/// Local tool failure. No tools are registered until a later slice.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ToolError {
+    #[error("tool `{name}` is not registered")]
+    NotRegistered { name: String },
+    #[error("tool `{name}` arguments are not JSON: {message}")]
+    BadArguments { name: String, message: String },
+    #[error("{0}")]
+    Message(String),
+}
+
+/// Rejected context file. The model does not read these paths itself.
+#[derive(Debug, Error)]
+pub enum ContextError {
+    #[error("context file not found: {0}")]
+    NotFound(PathBuf),
+    #[error("context path is not a file: {0}")]
+    NotAFile(PathBuf),
+    #[error("context file is outside the project root: {0}")]
+    OutsideRoot(PathBuf),
+    #[error("context file is denied: {0}")]
+    Denied(PathBuf),
+    #[error("context file {path} is {bytes} bytes; the limit is {limit}")]
+    TooLarge {
+        path: PathBuf,
+        bytes: u64,
+        limit: u64,
+    },
+    #[error("context files total {bytes} bytes; the limit is {limit}")]
+    TotalTooLarge { bytes: u64, limit: u64 },
+    #[error("context file is not UTF-8 text: {0}")]
+    NotUtf8(PathBuf),
+    #[error("no project root for context files")]
+    NoRoot,
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+}
+
 /// Finalize failure (`symsight.finalize.FinalizeError`).
 #[derive(Debug, Error)]
 pub enum FinalizeError {
@@ -89,6 +127,15 @@ pub enum ImageError {
     NoImage,
     #[error("image API returned HTTP {status}: {detail}")]
     Http { status: u16, detail: String },
+    #[error("{0}")]
+    Message(String),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// `symsight setup` failure. The API key is never included in the message.
+#[derive(Debug, Error)]
+pub enum SetupError {
     #[error("{0}")]
     Message(String),
     #[error("{0}")]

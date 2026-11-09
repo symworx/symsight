@@ -4,21 +4,32 @@
 //! Flag-compatible clap CLI. `uv run symsight` remains the Python entrypoint
 //! until a later flip PR; this binary is opt-in via `cargo run -p symsight-cli`.
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use symsight_core::{
-    finalize_draft, generate_and_write, get_config, list_brands, prepare_image_request,
-    render_image_with_xai, resolve_brand, scan_paths, ConfigOverrides, ContentFormat,
-    GenerateRequest, ImageOverrides,
+    create_project_config, delete_confirmed, delete_project_config, edit_project_config,
+    finalize_draft, generate_and_write, generate_base_url, get_config, list_brands,
+    preferred_editor, prepare_image_request, project_config_path, render_image_with_xai,
+    resolve_brand, run_setup_lines, scan_paths, ConfigOverrides, ContentFormat, GenerateRequest,
+    ImageOverrides,
 };
 
 #[derive(Debug, Parser)]
 #[command(
     name = "symsight",
     version,
-    about = "Brand-agnostic insight generator (articles & social posts)"
+    about = "Brand-agnostic insight generator (articles & social posts)",
+    after_help = "\
+Project file:
+  .symsight.toml in the project root.
+
+  setup    Menu for that file. Choose new, edit, delete, or quit
+  create   Write .symsight.toml. Shortcut for new
+  edit     Open .symsight.toml in $VISUAL or $EDITOR. Shortcut for edit
+  delete   Remove .symsight.toml. Shortcut for delete. Pass --yes when stdin is not a terminal
+"
 )]
 pub struct Cli {
     /// Project root for config resolution (default: auto)
@@ -78,9 +89,15 @@ pub enum Command {
         /// Override model id
         #[arg(long)]
         model: Option<String>,
+        /// Use a localhost model for this run. Keeps a saved localhost URL.
+        #[arg(long)]
+        local: bool,
         /// Tone id from the brand (alias: --voice). Default: brand default_tone
         #[arg(long, visible_alias = "voice")]
         tone: Option<String>,
+        /// File to read into the prompt (repeatable). Must sit inside the project root.
+        #[arg(long = "context")]
+        context: Vec<PathBuf>,
         #[arg(long)]
         drafts_dir: Option<PathBuf>,
     },
@@ -138,6 +155,21 @@ pub enum Command {
         #[arg(long)]
         brand_file: Option<PathBuf>,
     },
+    /// Menu for .symsight.toml. This binary prompts for new, edit, delete, or quit.
+    Setup,
+    /// Write .symsight.toml. Shortcut for the new choice in `setup`
+    #[command(hide = true)]
+    Create,
+    /// Open .symsight.toml. Shortcut for the edit choice in `setup`
+    #[command(hide = true)]
+    Edit,
+    /// Remove .symsight.toml. Shortcut for the delete choice in `setup`
+    #[command(hide = true)]
+    Delete {
+        /// Delete without asking. Required when stdin is not a terminal.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Launch the Textual TUI
     Tui {
         #[arg(long)]
@@ -168,6 +200,10 @@ pub fn execute(cli: Cli) -> i32 {
         Command::Check { .. } => cmd_check(&cli),
         Command::Brands { .. } => cmd_brands(&cli),
         Command::Image { .. } => cmd_image(&cli),
+        Command::Setup => cmd_setup(&cli),
+        Command::Create => cmd_create(&cli),
+        Command::Edit => cmd_edit(&cli),
+        Command::Delete { .. } => cmd_delete(&cli),
         Command::Tui { .. } => cmd_tui(),
     }
 }
@@ -185,7 +221,9 @@ fn cmd_generate(cli: &Cli) -> i32 {
         search,
         no_search,
         model,
+        local,
         tone,
+        context,
         drafts_dir,
     } = &cli.command
     else {
@@ -202,7 +240,10 @@ fn cmd_generate(cli: &Cli) -> i32 {
     if let Some(m) = model {
         overrides.model = Some(m.clone());
     }
-    let cfg = get_config(cli.config_root.as_deref(), Some(&overrides));
+    let mut cfg = get_config(cli.config_root.as_deref(), Some(&overrides));
+    if *local {
+        cfg.base_url = generate_base_url(&cfg.base_url, true);
+    }
 
     let brand = match resolve_brand(
         &cfg.brands_dir,
@@ -239,6 +280,7 @@ fn cmd_generate(cli: &Cli) -> i32 {
         use_search: resolve_use_search(*search, *no_search),
         model: model.clone(),
         tone: tone.clone(),
+        context_files: context.clone(),
     };
 
     let requested = tone.as_deref().map(str::trim).filter(|id| !id.is_empty());
@@ -502,6 +544,124 @@ fn cmd_image(cli: &Cli) -> i32 {
     let rel = relative_to(&path, &cfg.project_root);
     println!("Image written: {}", rel.display());
     0
+}
+
+fn project_root(cli: &Cli) -> PathBuf {
+    get_config(cli.config_root.as_deref(), None).project_root
+}
+
+fn current_editor() -> Option<String> {
+    let visual = std::env::var("VISUAL").ok();
+    let editor = std::env::var("EDITOR").ok();
+    preferred_editor(visual.as_deref(), editor.as_deref())
+}
+
+fn cmd_setup(cli: &Cli) -> i32 {
+    let root = project_root(cli);
+    let interactive = io::stdin().is_terminal();
+    let editor = current_editor();
+    let mut stdin = io::stdin().lock();
+    match run_setup_lines(
+        &root,
+        interactive,
+        editor.as_deref(),
+        &mut stdin,
+        &mut io::stdout(),
+    ) {
+        Ok(()) => 0,
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
+fn cmd_create(cli: &Cli) -> i32 {
+    match create_project_config(&project_root(cli)) {
+        Ok(outcome) => {
+            println!("{}", outcome.message());
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
+fn cmd_edit(cli: &Cli) -> i32 {
+    let editor = current_editor();
+    match edit_project_config(&project_root(cli), editor.as_deref()) {
+        Ok(path) => {
+            println!("edited: {}", path.display());
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
+fn cmd_delete(cli: &Cli) -> i32 {
+    let Command::Delete { yes } = &cli.command else {
+        unreachable!();
+    };
+    let root = project_root(cli);
+    if !yes {
+        match confirm_delete_shortcut(&root) {
+            DeleteGate::Proceed => {}
+            DeleteGate::Cancel => return 0,
+            DeleteGate::Stop => return 1,
+        }
+    }
+    match delete_project_config(&root) {
+        Ok(path) => {
+            println!("deleted: {}", path.display());
+            0
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
+}
+
+enum DeleteGate {
+    Proceed,
+    Cancel,
+    Stop,
+}
+
+/// Ask on a terminal. Off a terminal, require `--yes` and leave the file.
+fn confirm_delete_shortcut(root: &Path) -> DeleteGate {
+    let path = project_config_path(root);
+    if !io::stdin().is_terminal() {
+        eprintln!("pass --yes to delete .symsight.toml");
+        return DeleteGate::Stop;
+    }
+    let answer = match prompt_stdin(&format!("Delete {}? [y/N] ", path.display())) {
+        Ok(answer) => answer,
+        Err(err) => {
+            eprintln!("{err}");
+            return DeleteGate::Stop;
+        }
+    };
+    if delete_confirmed(&answer) {
+        return DeleteGate::Proceed;
+    }
+    println!(">>> delete cancelled");
+    DeleteGate::Cancel
+}
+
+fn prompt_stdin(label: &str) -> Result<String, String> {
+    print!("{label}");
+    io::stdout().flush().map_err(|err| err.to_string())?;
+    let mut line = String::new();
+    io::stdin()
+        .read_line(&mut line)
+        .map_err(|err| err.to_string())?;
+    Ok(line.trim().to_string())
 }
 
 fn cmd_tui() -> i32 {

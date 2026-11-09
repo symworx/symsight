@@ -92,6 +92,28 @@ fn parse_generate_flag_matrix() {
 }
 
 #[test]
+fn parse_repeatable_context() {
+    let cli = Cli::try_parse_from([
+        "symsight",
+        "generate",
+        "--context",
+        "notes.md",
+        "--context",
+        "sources/brief.md",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Generate { context, .. } => {
+            assert_eq!(
+                context,
+                vec![PathBuf::from("notes.md"), PathBuf::from("sources/brief.md")]
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn parse_tone_and_voice_alias() {
     let by_tone = Cli::try_parse_from(["symsight", "generate", "--tone", "briefing"]).unwrap();
     match by_tone.command {
@@ -222,6 +244,103 @@ fn execute_brands_and_check() {
     ])
     .unwrap();
     assert_eq!(symsight_cli::execute(check_bad), 1);
+}
+
+#[test]
+fn execute_create_and_delete_leave_env_alone() {
+    let root = tmp_dir();
+    let create = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "create",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(create), 0);
+    let text = fs::read_to_string(root.join(".symsight.toml")).unwrap();
+    assert!(text.contains("https://api.x.ai/v1"), "{text}");
+    assert!(text.contains("example-writer"), "{text}");
+    assert!(!root.join(".env").exists());
+
+    fs::write(root.join(".symsight.toml"), "kept = true\n").unwrap();
+    let again = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "create",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(again), 0);
+    assert_eq!(
+        fs::read_to_string(root.join(".symsight.toml")).unwrap(),
+        "kept = true\n"
+    );
+
+    fs::write(root.join(".env"), "XAI_API_KEY=unit-test-key\n").unwrap();
+    // A terminal would prompt. Only the non-interactive path is asserted here.
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        let setup =
+            Cli::try_parse_from(["symsight", "--config-root", root.to_str().unwrap(), "setup"])
+                .unwrap();
+        assert_eq!(symsight_cli::execute(setup), 0);
+        assert_eq!(
+            fs::read_to_string(root.join(".symsight.toml")).unwrap(),
+            "kept = true\n"
+        );
+        let refused = Cli::try_parse_from([
+            "symsight",
+            "--config-root",
+            root.to_str().unwrap(),
+            "delete",
+        ])
+        .unwrap();
+        assert_eq!(symsight_cli::execute(refused), 1);
+        assert!(root.join(".symsight.toml").is_file());
+    }
+
+    let removed = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "delete",
+        "--yes",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(removed), 0);
+    assert!(!root.join(".symsight.toml").exists());
+    assert!(root.join(".env").is_file());
+
+    let missing = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "delete",
+        "--yes",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(missing), 1);
+    assert!(root.join(".env").is_file());
+}
+
+#[test]
+fn parse_generate_local_and_hides_file_shortcuts_from_the_command_list() {
+    let cli = Cli::try_parse_from(["symsight", "generate", "--local", "--topic", "x"]).unwrap();
+    match cli.command {
+        Command::Generate { local, .. } => assert!(local),
+        other => panic!("{other:?}"),
+    }
+
+    use clap::CommandFactory;
+    let mut cmd = Cli::command();
+    let mut buf = Vec::new();
+    cmd.write_long_help(&mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    let commands = text.split("Project file:").next().unwrap_or(&text);
+    assert!(commands.contains("setup"), "{text}");
+    assert!(!commands.contains("\n  create "), "{text}");
+    assert!(text.contains("create   Write .symsight.toml"), "{text}");
+    assert!(text.contains("edit     Open .symsight.toml"), "{text}");
+    assert!(text.contains("delete   Remove .symsight.toml"), "{text}");
 }
 
 #[test]

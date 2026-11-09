@@ -15,12 +15,32 @@ from symsight.finalize import FinalizeError, finalize_draft
 from symsight.generate import GenerateError, generate_and_write
 from symsight.image import ImageError, render_image
 from symsight.models import ContentFormat, GenerateRequest
+from symsight.setup import (
+    create_project_config,
+    delete_confirmed,
+    delete_project_config,
+    edit_project_config,
+    generate_base_url,
+    preferred_editor,
+    project_config_path,
+    run_setup,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="symsight",
         description="Brand-agnostic insight generator (articles & social posts)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Project file:\n"
+            "  .symsight.toml in the project root.\n"
+            "\n"
+            "  setup    Menu for that file. Arrow keys choose new, edit, delete, or quit\n"
+            "  create   Write .symsight.toml. Shortcut for new\n"
+            "  edit     Open .symsight.toml in $VISUAL or $EDITOR. Shortcut for edit\n"
+            "  delete   Remove .symsight.toml. Shortcut for delete\n"
+        ),
     )
     parser.add_argument(
         "--config-root",
@@ -49,11 +69,26 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-search", action="store_true", help="Disable web_search")
     g.add_argument("--model", default=None, help="Override model id")
     g.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Use a localhost model for this run. Keeps a saved localhost URL. "
+            "Does not change .symsight.toml."
+        ),
+    )
+    g.add_argument(
         "--tone",
         "--voice",
         dest="tone",
         default=None,
         help="Tone id from the brand (alias: --voice). Default: brand default_tone",
+    )
+    g.add_argument(
+        "--context",
+        action="append",
+        default=None,
+        type=Path,
+        help="File to read into the prompt (repeatable). Must sit inside the project root.",
     )
     g.add_argument("--drafts-dir", type=Path, default=None)
 
@@ -86,6 +121,17 @@ def _build_parser() -> argparse.ArgumentParser:
     image.add_argument("--brand", default=None, help="Brand id (default: active_brand from config)")
     image.add_argument("--brand-file", type=Path, default=None, help="Path to brand YAML")
 
+    # setup / project file
+    sub.add_parser("setup", help="Menu for .symsight.toml (new, edit, delete, quit)")
+    sub.add_parser("create", help=argparse.SUPPRESS)
+    sub.add_parser("edit", help=argparse.SUPPRESS)
+    delete = sub.add_parser("delete", help=argparse.SUPPRESS)
+    delete.add_argument(
+        "--yes",
+        action="store_true",
+        help="Delete without asking. Required when stdin is not a terminal.",
+    )
+
     # tui
     t = sub.add_parser("tui", help="Launch the Textual TUI")
     t.add_argument("--drafts-dir", type=Path, default=None)
@@ -113,6 +159,8 @@ def cmd_generate(args: argparse.Namespace) -> int:
     if args.model:
         overrides["model"] = args.model
     cfg = get_config(root=args.config_root, overrides=overrides or None)
+    if args.local:
+        cfg = cfg.model_copy(update={"base_url": generate_base_url(cfg.base_url, True)})
 
     try:
         brand = resolve_brand(
@@ -144,6 +192,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         use_search=_resolve_use_search(args),
         model=args.model,
         tone=args.tone,
+        context_files=[str(path) for path in (args.context or [])],
     )
     try:
         selected = req.resolved_tone()
@@ -319,6 +368,61 @@ def cmd_image(args: argparse.Namespace) -> int:
     return 0
 
 
+def _project_root(args: argparse.Namespace) -> Path:
+    return get_config(root=args.config_root).project_root
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    try:
+        run_setup(_project_root(args))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_create(args: argparse.Namespace) -> int:
+    try:
+        print(create_project_config(_project_root(args)))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_edit(args: argparse.Namespace) -> int:
+    try:
+        print(edit_project_config(_project_root(args), preferred_editor()))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    from symsight import setup as setup_mod
+
+    root = _project_root(args)
+    if not args.yes:
+        if not setup_mod.stdin_is_tty():
+            print("pass --yes to delete .symsight.toml", file=sys.stderr)
+            return 1
+        path = project_config_path(root)
+        try:
+            answer = input(f"Delete {path}? [y/N] ")
+        except EOFError:
+            answer = ""
+        if not delete_confirmed(answer):
+            print(">>> delete cancelled")
+            return 0
+    try:
+        print(delete_project_config(root))
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_tui(args: argparse.Namespace) -> int:
     overrides = {}
     if args.drafts_dir:
@@ -349,6 +453,10 @@ def main(argv: list[str] | None = None) -> int:
         "check": cmd_check,
         "brands": cmd_brands,
         "image": cmd_image,
+        "setup": cmd_setup,
+        "create": cmd_create,
+        "edit": cmd_edit,
+        "delete": cmd_delete,
         "tui": cmd_tui,
     }
     return handlers[args.command](args)

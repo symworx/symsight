@@ -103,6 +103,7 @@ fn article_meta() -> DraftMeta {
         generated_at: "2026-08-15T12:00:00.000000+00:00".into(),
         title: None,
         path: None,
+        context_files: Vec::new(),
     }
 }
 
@@ -120,6 +121,7 @@ fn social_meta() -> DraftMeta {
         generated_at: "2026-08-15T12:00:00.000000+00:00".into(),
         title: None,
         path: None,
+        context_files: Vec::new(),
     }
 }
 

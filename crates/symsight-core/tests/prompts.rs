@@ -33,6 +33,7 @@ fn fixture_req(type_id: &str, format: ContentFormat) -> GenerateRequest {
         use_search: None,
         model: None,
         tone: None,
+        context_files: Vec::new(),
     }
 }
 

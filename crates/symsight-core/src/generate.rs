@@ -3,23 +3,38 @@
 
 //! Generation orchestration: prompt → LLM → validate → write draft.
 //!
-//! Port of `src/symsight/generate.py`. Tests inject [`crate::llm::ScriptedClient`];
-//! [`crate::llm::XaiClient`] is only built when no client is supplied.
+//! Port of `src/symsight/generate.py`. Tests inject [`crate::llm::ScriptedClient`].
+//! A loopback base URL builds [`crate::chat::LocalChatSession`] and does not
+//! require an API key. Anything else builds [`crate::llm::XaiClient`].
+//!
+//! The model turn goes through [`crate::tools::run_to_message`]. The registry
+//! is empty, so a tool call stops instead of running. Attached files are read
+//! locally and appended to the prompt.
 
 use std::path::{Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 
 use crate::brandcheck::check_text;
+use crate::chat::LocalChatSession;
 use crate::config::AppConfig;
 use crate::draft_io::{write_new_draft, WriteNewDraft};
 use crate::error::GenerateError;
-use crate::llm::{CompletionRequest, LlmClient, XaiClient};
+use crate::llm::{
+    is_loopback_base_url, CompletionRequest, LlmClient, LlmSession, ModelTurn, OneShotSession,
+    XaiClient,
+};
 use crate::models::{ContentFormat, DraftMeta, GenerateRequest};
 use crate::prompts::{length_rewrite_prompt, system_prompt, user_prompt, utc_today};
 use crate::textutil::{
     char_count, extract_social_text, extract_title_body, is_plausible_title, word_count,
 };
+use crate::tools::{context_block, load_context_files, run_to_message, ToolPolicy, ToolRegistry};
+
+enum LiveSession {
+    Remote(XaiClient),
+    Local(LocalChatSession),
+}
 
 /// Return `(title, body, meta)`. Does not write files.
 pub fn generate_content(
@@ -27,47 +42,92 @@ pub fn generate_content(
     cfg: &AppConfig,
     client: Option<&dyn LlmClient>,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
-    // Resolve type and tone before the API key so a bad id fails closed.
+    // Resolve type and tone before the transport so a bad id fails closed.
     req.resolved_type()?;
     req.resolved_tone()?;
-    let api_key = cfg
-        .require_api_key()
+    let policy = ToolPolicy::for_project(&cfg.project_root);
+    let context = load_context_files(&req.context_files, &policy)
         .map_err(|e| GenerateError::Message(e.to_string()))?;
+    let registry = ToolRegistry::empty(policy);
+    let context_note = context_block(&context);
+    let context_paths: Vec<String> = context.iter().map(|file| file.path.clone()).collect();
+    let local = is_loopback_base_url(&cfg.base_url);
+    let mut use_search = req.resolved_use_search()?;
+    if local && use_search {
+        if req.use_search == Some(true) {
+            return Err(GenerateError::Message(
+                "web_search is not available on a local model".into(),
+            ));
+        }
+        eprintln!("Warning: web_search is not available on a local model. Generating without it.");
+        use_search = false;
+    }
+    let api_key = if client.is_some() || local {
+        String::new()
+    } else {
+        cfg.require_api_key()
+            .map_err(|e| GenerateError::Message(e.to_string()))?
+    };
     let model = req.model.clone().unwrap_or_else(|| cfg.model.clone());
-    let owned: Option<XaiClient> = if client.is_none() {
-        Some(
-            XaiClient::new(api_key, &cfg.base_url)
-                .map_err(|e| GenerateError::Message(e.to_string()))?,
-        )
+    let mut owned = if client.is_none() {
+        Some(if local {
+            LiveSession::Local(
+                LocalChatSession::new(String::new(), &cfg.base_url)
+                    .map_err(|e| GenerateError::Message(e.to_string()))?,
+            )
+        } else {
+            LiveSession::Remote(
+                XaiClient::new(api_key, &cfg.base_url)
+                    .map_err(|e| GenerateError::Message(e.to_string()))?,
+            )
+        })
     } else {
         None
     };
-    let llm: &dyn LlmClient = match (client, owned.as_ref()) {
-        (Some(c), _) => c,
-        (None, Some(c)) => c,
-        (None, None) => unreachable!("client or owned XaiClient"),
+    let mut adapter = client.map(OneShotSession::new);
+    let session: &mut dyn LlmSession = if let Some(adapter) = adapter.as_mut() {
+        adapter
+    } else if let Some(owned) = owned.as_mut() {
+        match owned {
+            LiveSession::Remote(client) => client,
+            LiveSession::Local(client) => client,
+        }
+    } else {
+        unreachable!("client or owned session")
     };
 
     let today = utc_today();
-    let use_search = req.resolved_use_search()?;
     let sys_p = system_prompt(req, &today)?;
-    let usr_p = user_prompt(req, &today)?;
-    let raw = llm
-        .create_completion(&CompletionRequest {
+    let mut usr_p = user_prompt(req, &today)?;
+    usr_p.push_str(&context_note);
+    let raw = run_to_message(
+        session,
+        &CompletionRequest {
             model: model.clone(),
             system: sys_p.clone(),
             user: usr_p,
             use_search,
-        })
-        .map_err(|e| GenerateError::Message(e.to_string()))?;
+        },
+        &registry,
+    )
+    .map_err(|e| GenerateError::Message(e.to_string()))?;
     if raw.trim().is_empty() {
         return Err(GenerateError::Empty);
     }
 
+    let finish = FinishIn {
+        model: &model,
+        raw: &raw,
+        use_search,
+        sys_p: &sys_p,
+        today: &today,
+        context_note: &context_note,
+        context_paths: &context_paths,
+    };
     let (title, body, meta) = if req.format == ContentFormat::Social {
-        finish_social(req, llm, &model, &raw, use_search, &sys_p, &today)?
+        finish_social(req, session, &finish)?
     } else {
-        finish_article(req, llm, &model, &raw, use_search, &sys_p, &today)?
+        finish_article(req, session, &finish)?
     };
 
     let hits = check_text(&format!("{title}\n{body}"), &req.brand);
@@ -79,31 +139,38 @@ pub fn generate_content(
     Ok((title, body, meta))
 }
 
+struct FinishIn<'a> {
+    model: &'a str,
+    raw: &'a str,
+    use_search: bool,
+    sys_p: &'a str,
+    today: &'a str,
+    context_note: &'a str,
+    context_paths: &'a [String],
+}
+
 fn finish_article(
     req: &GenerateRequest,
-    llm: &dyn LlmClient,
-    model: &str,
-    raw: &str,
-    use_search: bool,
-    sys_p: &str,
-    today: &str,
+    session: &mut dyn LlmSession,
+    pass: &FinishIn<'_>,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
     let (mut title, mut body) =
-        extract_title_body(raw).map_err(|e| GenerateError::Message(e.to_string()))?;
+        extract_title_body(pass.raw).map_err(|e| GenerateError::Message(e.to_string()))?;
     let mut wc = word_count(&body);
     let min_w = req.resolved_min_words();
     let max_w = req.resolved_max_words();
 
     if wc < min_w as usize || wc > max_w as usize || !is_plausible_title(&title) {
-        let adjust = length_rewrite_prompt(req, &title, &body, wc as i64, today);
-        let raw2 = llm
-            .create_completion(&CompletionRequest {
-                model: model.to_string(),
-                system: sys_p.to_string(),
-                user: adjust,
+        let adjust = length_rewrite_prompt(req, &title, &body, wc as i64, pass.today);
+        let raw2 = fresh_message(
+            session,
+            &CompletionRequest {
+                model: pass.model.to_string(),
+                system: pass.sys_p.to_string(),
+                user: format!("{adjust}{}", pass.context_note),
                 use_search: false,
-            })
-            .map_err(|e| GenerateError::Message(e.to_string()))?;
+            },
+        )?;
         if !raw2.trim().is_empty() {
             if let Ok((t, b)) = extract_title_body(&raw2) {
                 title = t;
@@ -133,45 +200,44 @@ fn finish_article(
     }
 
     let meta = DraftMeta {
-        model: model.to_string(),
+        model: pass.model.to_string(),
         type_id: req.type_id.clone(),
         format: ContentFormat::Article.as_str().to_string(),
         topic: req.topic.clone(),
         tone: req.resolved_tone()?.map(|(id, _)| id),
         brand_id: req.brand.id.clone(),
-        used_web_search: use_search,
+        used_web_search: pass.use_search,
         word_count: Some(wc as i64),
         char_count: None,
         generated_at: now_iso(),
         title: None,
         path: None,
+        context_files: pass.context_paths.to_vec(),
     };
     Ok((title, body, meta))
 }
 
 fn finish_social(
     req: &GenerateRequest,
-    llm: &dyn LlmClient,
-    model: &str,
-    raw: &str,
-    use_search: bool,
-    sys_p: &str,
-    today: &str,
+    session: &mut dyn LlmSession,
+    pass: &FinishIn<'_>,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
-    let mut body = extract_social_text(raw).map_err(|e| GenerateError::Message(e.to_string()))?;
+    let mut body =
+        extract_social_text(pass.raw).map_err(|e| GenerateError::Message(e.to_string()))?;
     let mut cc = char_count(&body);
     let max_c = req.resolved_max_chars();
 
     if cc > max_c as usize {
-        let adjust = length_rewrite_prompt(req, "", &body, cc as i64, today);
-        let raw2 = llm
-            .create_completion(&CompletionRequest {
-                model: model.to_string(),
-                system: sys_p.to_string(),
-                user: adjust,
+        let adjust = length_rewrite_prompt(req, "", &body, cc as i64, pass.today);
+        let raw2 = fresh_message(
+            session,
+            &CompletionRequest {
+                model: pass.model.to_string(),
+                system: pass.sys_p.to_string(),
+                user: format!("{adjust}{}", pass.context_note),
                 use_search: false,
-            })
-            .map_err(|e| GenerateError::Message(e.to_string()))?;
+            },
+        )?;
         if !raw2.trim().is_empty() {
             if let Ok(b) = extract_social_text(&raw2) {
                 body = b;
@@ -193,20 +259,37 @@ fn finish_social(
     }
 
     let meta = DraftMeta {
-        model: model.to_string(),
+        model: pass.model.to_string(),
         type_id: req.type_id.clone(),
         format: ContentFormat::Social.as_str().to_string(),
         topic: req.topic.clone(),
         tone: req.resolved_tone()?.map(|(id, _)| id),
         brand_id: req.brand.id.clone(),
-        used_web_search: use_search,
+        used_web_search: pass.use_search,
         word_count: None,
         char_count: Some(cc as i64),
         generated_at: now_iso(),
         title: None,
         path: None,
+        context_files: pass.context_paths.to_vec(),
     };
     Ok((title, body, meta))
+}
+
+/// Length rewrite is a fresh call with no tools. A tool call here is an error.
+fn fresh_message(
+    session: &mut dyn LlmSession,
+    req: &CompletionRequest,
+) -> Result<String, GenerateError> {
+    match session
+        .complete(req, &[])
+        .map_err(|e| GenerateError::Message(e.to_string()))?
+    {
+        ModelTurn::Message(text) => Ok(text),
+        ModelTurn::Calls(_) => Err(GenerateError::Message(
+            "length rewrite returned tool calls".into(),
+        )),
+    }
 }
 
 pub fn generate_and_write(

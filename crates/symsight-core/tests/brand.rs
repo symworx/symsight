@@ -271,6 +271,7 @@ fn generate_request_resolves_defaults_and_overrides() {
         use_search: None,
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     assert_eq!(req.resolved_min_words(), 50);
     assert_eq!(req.resolved_max_words(), 100);
@@ -290,6 +291,7 @@ fn generate_request_resolves_defaults_and_overrides() {
         use_search: None,
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     assert_eq!(news_req.resolved_min_words(), 80);
     assert_eq!(news_req.resolved_max_words(), 90);
@@ -307,6 +309,7 @@ fn generate_request_resolves_defaults_and_overrides() {
         use_search: Some(false),
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     assert!(!forced_off.resolved_use_search().unwrap());
 }
@@ -325,6 +328,7 @@ fn generate_request_unknown_type() {
         use_search: None,
         model: None,
         tone: None,
+        context_files: Vec::new(),
     };
     let err = req.resolved_type().unwrap_err();
     match err {
@@ -475,6 +479,7 @@ fn unknown_tone_names_known_ids() {
         use_search: None,
         model: None,
         tone: Some("missing".into()),
+        context_files: Vec::new(),
     };
     match req.resolved_tone().unwrap_err() {
         GenerateError::UnknownTone {

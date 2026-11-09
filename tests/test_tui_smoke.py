@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Nathaniel T. Berry
 # Licensed under the Apache License, Version 2.0.
-"""TUI import / construct smoke — no live Textual run, no live HTTP."""
+"""TUI import smoke and a headless check that the settings panel tracks the screen."""
 
 from __future__ import annotations
 
@@ -29,6 +29,24 @@ def test_symsight_app_constructs(tmp_path: Path) -> None:
     assert app.brand is None
 
 
+def test_settings_panel_is_a_fraction_of_the_screen(tmp_path: Path) -> None:
+    import asyncio
+
+    cfg = _cfg(tmp_path)
+
+    async def check(width: int, height: int) -> None:
+        app = SymsightApp(cfg)
+        async with app.run_test(size=(width, height)) as pilot:
+            app.push_screen(SettingsScreen(cfg))
+            await pilot.pause()
+            dialog = app.screen.query_one("#set-dialog")
+            assert dialog.outer_size.width == width * 80 // 100
+            assert dialog.outer_size.height == height * 80 // 100
+
+    asyncio.run(check(100, 40))
+    asyncio.run(check(160, 50))
+
+
 def test_settings_uses_pydantic_model_copy(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     updated = cfg.model_copy(update={"active_brand": "other"})
@@ -36,6 +54,22 @@ def test_settings_uses_pydantic_model_copy(tmp_path: Path) -> None:
     assert cfg.active_brand == "fixture-co"
     screen = SettingsScreen(cfg)
     assert screen.cfg.active_brand == "fixture-co"
+
+
+def test_context_status_lists_names_and_sizes(tmp_path: Path) -> None:
+    from symsight.tui.app import _context_file_args, _context_status
+
+    notes = tmp_path / "notes.md"
+    notes.write_text("abcd", encoding="utf-8")
+    assert _context_file_args(" notes.md , , sources/brief.md ") == [
+        "notes.md",
+        "sources/brief.md",
+    ]
+    assert _context_status([]) is None
+    status = _context_status([str(notes), "missing.md"])
+    assert status is not None
+    assert "notes.md, 4 bytes" in status
+    assert "missing.md" in status
 
 
 def test_tone_options_include_description() -> None:
