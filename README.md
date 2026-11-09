@@ -9,8 +9,11 @@ Voice, firm name, disclaimers, forbidden terms, and content-type prompts live in
 ```bash
 # Rust 1.85+ is required: uv sync compiles the native extension.
 uv sync
-cp .env.example .env   # set XAI_API_KEY from https://console.x.ai
+uv run symsight setup
+# or: cp .env.example .env and set XAI_API_KEY from https://console.x.ai
 ```
+
+`setup` writes the model and base URL to `.symsight.toml`. The default is the hosted xAI API. A localhost URL uses a local model and does not call web search. Images still use xAI and need `XAI_API_KEY`. The key is stored only in the gitignored `.env` file.
 
 The domain core is Rust (`symsight._native`). The Python package is the `uv run symsight` CLI and Textual TUI.
 
@@ -53,6 +56,10 @@ uv run symsight brands
 ## CLI
 
 ```bash
+# Save model and base URL. Add --local for a server on this machine.
+uv run symsight setup
+uv run symsight setup --local --base-url http://127.0.0.1:11434/v1 --model llama3.2
+
 # Article (default type = first type on brand if omitted)
 uv run symsight generate --brand example-writer --type general --topic "deep work"
 # --voice is an alias of --tone. Omit it to use the brand default_tone.

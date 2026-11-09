@@ -3,8 +3,9 @@
 
 //! Generation orchestration: prompt → LLM → validate → write draft.
 //!
-//! Port of `src/symsight/generate.py`. Tests inject [`crate::llm::ScriptedClient`];
-//! [`crate::llm::XaiClient`] is only built when no client is supplied.
+//! Port of `src/symsight/generate.py`. Tests inject [`crate::llm::ScriptedClient`].
+//! A loopback base URL builds [`crate::chat::LocalChatSession`] and does not
+//! require an API key. Anything else builds [`crate::llm::XaiClient`].
 //!
 //! The model turn goes through [`crate::tools::run_to_message`]. The registry
 //! is empty, so a tool call stops instead of running. Attached files are read
@@ -15,10 +16,14 @@ use std::path::{Path, PathBuf};
 use chrono::{SecondsFormat, Utc};
 
 use crate::brandcheck::check_text;
+use crate::chat::LocalChatSession;
 use crate::config::AppConfig;
 use crate::draft_io::{write_new_draft, WriteNewDraft};
 use crate::error::GenerateError;
-use crate::llm::{CompletionRequest, LlmClient, LlmSession, ModelTurn, OneShotSession, XaiClient};
+use crate::llm::{
+    is_loopback_base_url, CompletionRequest, LlmClient, LlmSession, ModelTurn, OneShotSession,
+    XaiClient,
+};
 use crate::models::{ContentFormat, DraftMeta, GenerateRequest};
 use crate::prompts::{length_rewrite_prompt, system_prompt, user_prompt, utc_today};
 use crate::textutil::{
@@ -26,13 +31,18 @@ use crate::textutil::{
 };
 use crate::tools::{context_block, load_context_files, run_to_message, ToolPolicy, ToolRegistry};
 
+enum LiveSession {
+    Remote(XaiClient),
+    Local(LocalChatSession),
+}
+
 /// Return `(title, body, meta)`. Does not write files.
 pub fn generate_content(
     req: &GenerateRequest,
     cfg: &AppConfig,
     client: Option<&dyn LlmClient>,
 ) -> Result<(String, String, DraftMeta), GenerateError> {
-    // Resolve type and tone before the API key so a bad id fails closed.
+    // Resolve type and tone before the transport so a bad id fails closed.
     req.resolved_type()?;
     req.resolved_tone()?;
     let policy = ToolPolicy::for_project(&cfg.project_root);
@@ -41,15 +51,36 @@ pub fn generate_content(
     let registry = ToolRegistry::empty(policy);
     let context_note = context_block(&context);
     let context_paths: Vec<String> = context.iter().map(|file| file.path.clone()).collect();
-    let api_key = cfg
-        .require_api_key()
-        .map_err(|e| GenerateError::Message(e.to_string()))?;
+    let local = is_loopback_base_url(&cfg.base_url);
+    let mut use_search = req.resolved_use_search()?;
+    if local && use_search {
+        if req.use_search == Some(true) {
+            return Err(GenerateError::Message(
+                "web_search is not available on a local model".into(),
+            ));
+        }
+        eprintln!("Warning: web_search is not available on a local model. Generating without it.");
+        use_search = false;
+    }
+    let api_key = if client.is_some() || local {
+        String::new()
+    } else {
+        cfg.require_api_key()
+            .map_err(|e| GenerateError::Message(e.to_string()))?
+    };
     let model = req.model.clone().unwrap_or_else(|| cfg.model.clone());
-    let mut owned: Option<XaiClient> = if client.is_none() {
-        Some(
-            XaiClient::new(api_key, &cfg.base_url)
-                .map_err(|e| GenerateError::Message(e.to_string()))?,
-        )
+    let mut owned = if client.is_none() {
+        Some(if local {
+            LiveSession::Local(
+                LocalChatSession::new(String::new(), &cfg.base_url)
+                    .map_err(|e| GenerateError::Message(e.to_string()))?,
+            )
+        } else {
+            LiveSession::Remote(
+                XaiClient::new(api_key, &cfg.base_url)
+                    .map_err(|e| GenerateError::Message(e.to_string()))?,
+            )
+        })
     } else {
         None
     };
@@ -57,13 +88,15 @@ pub fn generate_content(
     let session: &mut dyn LlmSession = if let Some(adapter) = adapter.as_mut() {
         adapter
     } else if let Some(owned) = owned.as_mut() {
-        owned
+        match owned {
+            LiveSession::Remote(client) => client,
+            LiveSession::Local(client) => client,
+        }
     } else {
-        unreachable!("client or owned XaiClient")
+        unreachable!("client or owned session")
     };
 
     let today = utc_today();
-    let use_search = req.resolved_use_search()?;
     let sys_p = system_prompt(req, &today)?;
     let mut usr_p = user_prompt(req, &today)?;
     usr_p.push_str(&context_note);

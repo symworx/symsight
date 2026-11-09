@@ -204,7 +204,7 @@ class GenerateScreen(ModalScreen[bool]):
 
 
 class SettingsScreen(ModalScreen[bool]):
-    """Edit drafts/final dirs and active brand."""
+    """Edit dirs, the active brand, the model, and the base URL."""
 
     CSS = """
     SettingsScreen { align: center middle; }
@@ -245,6 +245,11 @@ class SettingsScreen(ModalScreen[bool]):
             )
             yield Label("Brands directory")
             yield Input(value=str(self.cfg.brands_dir), id="set-brands-dir")
+            yield Label("Model")
+            yield Input(value=self.cfg.model, id="set-model")
+            yield Label("Base URL")
+            yield Input(value=self.cfg.base_url, id="set-base-url")
+            yield Label("A localhost URL uses a local model and skips web search.")
             with Horizontal(id="set-actions"):
                 yield Button("Cancel", id="set-cancel")
                 yield Button("Save", variant="primary", id="set-save")
@@ -259,16 +264,21 @@ class SettingsScreen(ModalScreen[bool]):
         final = Path(self.query_one("#set-final", Input).value).expanduser()
         brands_dir = Path(self.query_one("#set-brands-dir", Input).value).expanduser()
         brand = str(self.query_one("#set-brand", Select).value)
-        self.cfg = self.cfg.model_copy(
-            update={
-                "drafts_dir": drafts if drafts.is_absolute() else (self.cfg.project_root / drafts).resolve(),
-                "final_dir": final if final.is_absolute() else (self.cfg.project_root / final).resolve(),
-                "brands_dir": brands_dir
-                if brands_dir.is_absolute()
-                else (self.cfg.project_root / brands_dir).resolve(),
-                "active_brand": brand,
-            }
-        )
+        model = self.query_one("#set-model", Input).value.strip()
+        base_url = self.query_one("#set-base-url", Input).value.strip()
+        update: dict[str, object] = {
+            "drafts_dir": drafts if drafts.is_absolute() else (self.cfg.project_root / drafts).resolve(),
+            "final_dir": final if final.is_absolute() else (self.cfg.project_root / final).resolve(),
+            "brands_dir": brands_dir
+            if brands_dir.is_absolute()
+            else (self.cfg.project_root / brands_dir).resolve(),
+            "active_brand": brand,
+        }
+        if model:
+            update["model"] = model
+        if base_url:
+            update["base_url"] = base_url
+        self.cfg = self.cfg.model_copy(update=update)
         save_project_config(self.cfg)
         # stash on app
         app = self.app

@@ -17,6 +17,7 @@ if __name__ == "__main__":
         "finalize",
         "check",
         "brands",
+        "setup",
         "tui",
         "-h",
         "--help",

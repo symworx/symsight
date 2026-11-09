@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 
 use crate::error::LlmError;
 
-const HTTP_TIMEOUT_SECS: u64 = 120;
+pub(crate) const HTTP_TIMEOUT_SECS: u64 = 120;
 
 static XAI_KEY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"xai-[A-Za-z0-9_-]+").expect("XAI_KEY"));
@@ -42,6 +42,47 @@ pub(crate) fn validate_base_url(base: &str) -> Result<(), LlmError> {
     Err(LlmError::Http(
         "SYMSIGHT_BASE_URL must be https:// (http is allowed only for localhost)".into(),
     ))
+}
+
+/// True when the URL host is a loopback name. Scheme is `http` or `https`.
+///
+/// The host must be `localhost`, `127.0.0.1`, or `[::1]`, then end or continue
+/// with `/`, `:`, `?`, or `#`. `http://localhost.example` is not loopback.
+pub fn is_loopback_base_url(base: &str) -> bool {
+    let lower = base.trim().to_ascii_lowercase();
+    let rest = if let Some(rest) = lower.strip_prefix("https://") {
+        rest
+    } else if let Some(rest) = lower.strip_prefix("http://") {
+        rest
+    } else {
+        return false;
+    };
+    const HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
+    HOSTS.iter().any(|host| {
+        let Some(after) = rest.strip_prefix(host) else {
+            return false;
+        };
+        after.is_empty()
+            || after.starts_with('/')
+            || after.starts_with(':')
+            || after.starts_with('?')
+            || after.starts_with('#')
+    })
+}
+
+pub(crate) fn blocking_client(
+    timeout: Duration,
+    follow_redirects: bool,
+) -> Result<reqwest::blocking::Client, LlmError> {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .use_rustls_tls();
+    if !follow_redirects {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
+    builder
+        .build()
+        .map_err(|e| LlmError::Http(redact_secrets(&e.to_string())))
 }
 
 #[derive(Debug, Clone)]
@@ -142,11 +183,7 @@ impl XaiClient {
     pub fn new(api_key: impl Into<String>, base_url: impl Into<String>) -> Result<Self, LlmError> {
         let base_url = base_url.into();
         validate_base_url(&base_url)?;
-        let http = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
-            .use_rustls_tls()
-            .build()
-            .map_err(|e| LlmError::Http(redact_secrets(&e.to_string())))?;
+        let http = blocking_client(Duration::from_secs(HTTP_TIMEOUT_SECS), true)?;
         Ok(Self {
             api_key: api_key.into(),
             base_url,
@@ -434,6 +471,20 @@ impl LlmSession for ScriptedSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loopback_base_url_is_scheme_and_host() {
+        assert!(is_loopback_base_url("http://127.0.0.1:11434/v1"));
+        assert!(is_loopback_base_url("http://localhost/v1"));
+        assert!(is_loopback_base_url("http://[::1]:11434/v1"));
+        assert!(is_loopback_base_url("https://127.0.0.1"));
+        assert!(is_loopback_base_url("  HTTP://LocalHost/v1  "));
+        assert!(!is_loopback_base_url("https://api.x.ai/v1"));
+        assert!(!is_loopback_base_url("http://localhost.example/v1"));
+        assert!(!is_loopback_base_url("http://127.0.0.1.example"));
+        assert!(!is_loopback_base_url("http://example.com"));
+        assert!(!is_loopback_base_url("not a url"));
+    }
 
     #[test]
     fn redact_secrets_strips_xai_keys_and_bearer() {

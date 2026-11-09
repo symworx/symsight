@@ -10,11 +10,18 @@ from pathlib import Path
 
 from symsight.brand import BrandError, list_brands, resolve_brand
 from symsight.brandcheck import scan_paths
-from symsight.config import get_config
+from symsight.config import (
+    DEFAULT_BASE_URL,
+    DEFAULT_LOCAL_BASE_URL,
+    DEFAULT_MODEL,
+    AppConfig,
+    get_config,
+)
 from symsight.finalize import FinalizeError, finalize_draft
 from symsight.generate import GenerateError, generate_and_write
 from symsight.image import ImageError, render_image
 from symsight.models import ContentFormat, GenerateRequest
+from symsight.setup import apply_setup, list_model_ids
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -92,6 +99,22 @@ def _build_parser() -> argparse.ArgumentParser:
     image.add_argument("--model", default=None, help="Override the brand image model")
     image.add_argument("--brand", default=None, help="Brand id (default: active_brand from config)")
     image.add_argument("--brand-file", type=Path, default=None, help="Path to brand YAML")
+
+    # setup
+    setup = sub.add_parser("setup", help="Save the model and base URL for this project")
+    setup.add_argument("--local", action="store_true", help="Use a localhost OpenAI-compatible model")
+    setup.add_argument("--remote", action="store_true", help="Use the hosted xAI API")
+    setup.add_argument(
+        "--base-url",
+        default=None,
+        help="API base URL (default depends on --local / --remote)",
+    )
+    setup.add_argument("--model", default=None, help="Model id")
+    setup.add_argument(
+        "--api-key",
+        default=None,
+        help="Remote XAI_API_KEY. Prefer the hidden prompt; this flag is stored in shell history.",
+    )
 
     # tui
     t = sub.add_parser("tui", help="Launch the Textual TUI")
@@ -327,6 +350,142 @@ def cmd_image(args: argparse.Namespace) -> int:
     return 0
 
 
+def _stdin_is_tty() -> bool:
+    return sys.stdin.isatty()
+
+
+def _prompt(text: str) -> str:
+    try:
+        return input(text).strip()
+    except EOFError:
+        return ""
+
+
+def _setup_choice(args: argparse.Namespace) -> bool | None:
+    """Return True for local, False for remote, or None when the answer is unusable."""
+    if args.local and args.remote:
+        print("pass only one of --local or --remote", file=sys.stderr)
+        return None
+    if args.local:
+        return True
+    if args.remote:
+        return False
+    if not _stdin_is_tty():
+        print("pass --remote or --local", file=sys.stderr)
+        return None
+    answer = _prompt("Write with a remote xAI model or a local model? [remote]: ").lower()
+    if answer in {"", "remote", "r"}:
+        return False
+    if answer in {"local", "l"}:
+        return True
+    print("answer remote or local", file=sys.stderr)
+    return None
+
+
+def _local_model(base_url: str, model: str | None) -> tuple[str, bool] | None:
+    if model:
+        return model, False
+    if not _stdin_is_tty():
+        print("pass --model", file=sys.stderr)
+        return None
+    try:
+        ids = list_model_ids(base_url)
+    except (RuntimeError, OSError) as exc:
+        print(f"Could not list models at {base_url}: {exc}", file=sys.stderr)
+        answer = _prompt("Model id: ")
+        if not answer:
+            print("pass --model", file=sys.stderr)
+            return None
+        return answer, True
+    if ids:
+        for index, model_id in enumerate(ids, start=1):
+            print(f"  {index}. {model_id}")
+        default = ids[0]
+        answer = _prompt(f"Model [{default}]: ")
+        if not answer:
+            return default, False
+        if answer.isdigit():
+            number = int(answer)
+            if 1 <= number <= len(ids):
+                return ids[number - 1], False
+        return answer, False
+    print(f"No models reported at {base_url}.", file=sys.stderr)
+    answer = _prompt("Model id: ")
+    if not answer:
+        print("pass --model", file=sys.stderr)
+        return None
+    return answer, False
+
+
+def _remote_api_key(args: argparse.Namespace, cfg: AppConfig) -> str | None:
+    """Return the key to write, or None to leave ``.env`` alone.
+
+    Prints an error and returns the sentinel ``""`` only when setup must stop.
+    A non-empty existing config key is left untouched.
+    """
+    if args.api_key is not None:
+        if not str(args.api_key).strip():
+            print("API key is empty", file=sys.stderr)
+            return ""
+        return str(args.api_key)
+    if cfg.xai_api_key.strip():
+        return None
+    if _stdin_is_tty():
+        import getpass
+
+        key = getpass.getpass("XAI_API_KEY: ")
+        if not key.strip():
+            print("set XAI_API_KEY or pass --api-key", file=sys.stderr)
+            return ""
+        return key
+    print("set XAI_API_KEY or pass --api-key", file=sys.stderr)
+    return ""
+
+
+def _print_setup(report: dict[str, object], *, server_down: bool) -> None:
+    print(f"Saved {report['config_path']}")
+    print(f"Model: {report['model']}")
+    print(f"Base URL: {report['base_url']}")
+    if report["local"]:
+        print("Web search is unavailable on a local model. Images still use xAI.")
+    if server_down:
+        print("Generate will fail until the server is running.")
+    print('symsight generate --type general --topic "your topic"')
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    local = _setup_choice(args)
+    if local is None:
+        return 1
+    cfg = get_config(root=args.config_root)
+    server_down = False
+    if local:
+        if args.api_key:
+            print("local setup does not take an API key", file=sys.stderr)
+            return 1
+        base_url = args.base_url or DEFAULT_LOCAL_BASE_URL
+        picked = _local_model(base_url, args.model)
+        if picked is None:
+            return 1
+        model, server_down = picked
+        api_key = None
+    else:
+        base_url = args.base_url or DEFAULT_BASE_URL
+        model = args.model or DEFAULT_MODEL
+        api_key = _remote_api_key(args, cfg)
+        if api_key == "":
+            return 1
+    try:
+        report = apply_setup(
+            cfg, local=local, base_url=base_url, model=model, api_key=api_key
+        )
+    except (RuntimeError, OSError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    _print_setup(report, server_down=server_down)
+    return 0
+
+
 def cmd_tui(args: argparse.Namespace) -> int:
     overrides = {}
     if args.drafts_dir:
@@ -357,6 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         "check": cmd_check,
         "brands": cmd_brands,
         "image": cmd_image,
+        "setup": cmd_setup,
         "tui": cmd_tui,
     }
     return handlers[args.command](args)

@@ -133,6 +133,15 @@ pub enum ImageError {
     Io(#[from] std::io::Error),
 }
 
+/// `symsight setup` failure. The API key is never included in the message.
+#[derive(Debug, Error)]
+pub enum SetupError {
+    #[error("{0}")]
+    Message(String),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+}
+
 /// Missing API key (`RuntimeError` from `AppConfig.require_api_key`).
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConfigError {

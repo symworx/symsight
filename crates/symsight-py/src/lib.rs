@@ -16,15 +16,15 @@ use pyo3::types::{PyAny, PyDict, PyList, PyModule};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use symsight_core::{
-    char_count, check_path, check_text, clean_body, extract_social_text, extract_title_body,
-    finalize_draft, find_hits, generate_and_write, generate_content, is_plausible_title,
-    iter_scan_files, length_rewrite_prompt, list_brand_files, list_brands, list_drafts, list_final,
-    load_brand_file, parse_front_matter, read_draft, render_front_matter, render_image_with_xai,
-    resolve_brand, save_draft_body, scan_paths, set_status, slugify, strip_disclaimer_from_body,
-    system_prompt, unique_draft_path, user_prompt, utc_today, word_count, write_draft_content,
-    write_new_draft, AppConfig, Brand, BrandError, CompletionRequest, ContentFormat, DraftMeta,
-    FinalizeError, FrontValue, GenerateError, GenerateRequest, ImageError, ImageOverrides,
-    LlmClient, LlmError, WriteNewDraft,
+    apply_setup, char_count, check_path, check_text, clean_body, extract_social_text,
+    extract_title_body, finalize_draft, find_hits, generate_and_write, generate_content,
+    is_plausible_title, iter_scan_files, length_rewrite_prompt, list_brand_files, list_brands,
+    list_drafts, list_final, list_model_ids, load_brand_file, parse_front_matter, read_draft,
+    render_front_matter, render_image_with_xai, resolve_brand, save_draft_body, scan_paths,
+    set_status, slugify, strip_disclaimer_from_body, system_prompt, unique_draft_path, user_prompt,
+    utc_today, word_count, write_draft_content, write_new_draft, AppConfig, Brand, BrandError,
+    CompletionRequest, ContentFormat, DraftMeta, FinalizeError, FrontValue, GenerateError,
+    GenerateRequest, ImageError, ImageOverrides, LlmClient, LlmError, SetupRequest, WriteNewDraft,
 };
 
 create_exception!(
@@ -687,6 +687,51 @@ fn render_image_py(
 }
 
 #[pyfunction]
+#[pyo3(name = "apply_setup", signature = (cfg, local, base_url, model, api_key=None))]
+fn apply_setup_py(
+    py: Python<'_>,
+    cfg: Bound<'_, PyAny>,
+    local: bool,
+    base_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> PyResult<Py<PyDict>> {
+    let cfg = extract_cfg(&cfg)?;
+    let report = py
+        .detach(|| {
+            apply_setup(
+                &cfg,
+                &SetupRequest {
+                    local,
+                    base_url,
+                    model,
+                    api_key,
+                },
+            )
+        })
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let dict = PyDict::new(py);
+    dict.set_item("config_path", report.config_path.display().to_string())?;
+    if let Some(path) = report.env_path {
+        dict.set_item("env_path", path.display().to_string())?;
+    } else {
+        dict.set_item("env_path", py.None())?;
+    }
+    dict.set_item("base_url", report.base_url)?;
+    dict.set_item("model", report.model)?;
+    dict.set_item("local", report.local)?;
+    dict.set_item("wrote_api_key", report.wrote_api_key)?;
+    Ok(dict.unbind())
+}
+
+#[pyfunction]
+#[pyo3(name = "list_model_ids")]
+fn list_model_ids_py(py: Python<'_>, base_url: String) -> PyResult<Vec<String>> {
+    py.detach(|| list_model_ids(&base_url))
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+}
+
+#[pyfunction]
 #[pyo3(name = "response_text")]
 fn response_text_py(response: Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(text) = response.getattr("output_text") {
@@ -741,6 +786,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_and_write_py, m)?)?;
     m.add_function(wrap_pyfunction!(render_image_py, m)?)?;
     m.add_function(wrap_pyfunction!(make_client_py, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_setup_py, m)?)?;
+    m.add_function(wrap_pyfunction!(list_model_ids_py, m)?)?;
     m.add_function(wrap_pyfunction!(response_text_py, m)?)?;
     Ok(())
 }

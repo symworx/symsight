@@ -247,6 +247,69 @@ fn execute_brands_and_check() {
 }
 
 #[test]
+fn execute_setup_local_and_remote() {
+    let root = tmp_dir();
+    let local = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "setup",
+        "--local",
+        "--base-url",
+        "http://127.0.0.1:11434/v1",
+        "--model",
+        "llama3.2",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(local), 0);
+    let text = fs::read_to_string(root.join(".symsight.toml")).unwrap();
+    assert!(text.contains("http://127.0.0.1:11434/v1"), "{text}");
+    assert!(text.contains("llama3.2"), "{text}");
+    assert!(!root.join(".env").exists());
+
+    let secret = "unit-test-key";
+    let remote = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "setup",
+        "--remote",
+        "--api-key",
+        secret,
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(remote), 0);
+    let env = fs::read_to_string(root.join(".env")).unwrap();
+    assert!(env.contains(&format!("XAI_API_KEY={secret}")), "{env}");
+    let toml = fs::read_to_string(root.join(".symsight.toml")).unwrap();
+    assert!(toml.contains("https://api.x.ai/v1"), "{toml}");
+    assert!(!toml.contains(secret), "{toml}");
+
+    let both = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "setup",
+        "--local",
+        "--remote",
+        "--model",
+        "llama3.2",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(both), 1);
+
+    let missing_model = Cli::try_parse_from([
+        "symsight",
+        "--config-root",
+        root.to_str().unwrap(),
+        "setup",
+        "--local",
+    ])
+    .unwrap();
+    assert_eq!(symsight_cli::execute(missing_model), 1);
+}
+
+#[test]
 fn execute_finalize_missing_and_tui() {
     let root = tmp_dir();
     let missing = Cli::try_parse_from([

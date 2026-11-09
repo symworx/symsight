@@ -381,6 +381,88 @@ fn denied_context_file_does_not_call_the_model() {
 }
 
 #[test]
+fn local_cfg(root: &std::path::Path) -> AppConfig {
+    let mut cfg = test_cfg(root);
+    cfg.base_url = "http://127.0.0.1:11434/v1".into();
+    cfg.xai_api_key.clear();
+    cfg
+}
+
+#[test]
+fn local_forced_search_errors_before_the_client_is_called() {
+    let root = tmp_dir();
+    let brand = load_brand_file(repo_root().join("tests/fixtures/fixture-co.yaml")).unwrap();
+    let client = ScriptedClient::new(vec![article_words(60)]);
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: Some("testing".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: Some(true),
+        model: None,
+        tone: None,
+        context_files: Vec::new(),
+    };
+    let err = generate_content(&req, &local_cfg(&root), Some(&client)).unwrap_err();
+    assert!(err.to_string().contains("web_search"), "{err}");
+    assert_eq!(client.call_count(), 0);
+}
+
+#[test]
+fn local_without_search_skips_the_api_key() {
+    let root = tmp_dir();
+    let brand = load_brand_file(repo_root().join("tests/fixtures/fixture-co.yaml")).unwrap();
+    let client = ScriptedClient::new(vec![article_words(60)]);
+    let req = GenerateRequest {
+        brand,
+        type_id: "general".into(),
+        format: ContentFormat::Article,
+        topic: Some("testing".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: Some(false),
+        model: None,
+        tone: None,
+        context_files: Vec::new(),
+    };
+    let (_title, _body, meta) = generate_content(&req, &local_cfg(&root), Some(&client)).unwrap();
+    assert!(!meta.used_web_search);
+    assert_eq!(meta.model, "test-model");
+    let calls = client.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(!calls[0].use_search);
+}
+
+#[test]
+fn local_drops_brand_default_search() {
+    let root = tmp_dir();
+    let brand = load_brand_file(repo_root().join("config/brands/example-writer.yaml")).unwrap();
+    let client = ScriptedClient::new(vec![article_words(60)]);
+    let req = GenerateRequest {
+        brand,
+        type_id: "news".into(),
+        format: ContentFormat::Article,
+        topic: Some("testing".into()),
+        min_words: Some(50),
+        max_words: Some(100),
+        max_chars: None,
+        use_search: None,
+        model: None,
+        tone: None,
+        context_files: Vec::new(),
+    };
+    let (_title, _body, meta) = generate_content(&req, &local_cfg(&root), Some(&client)).unwrap();
+    assert!(!meta.used_web_search);
+    let calls = client.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(!calls[0].use_search);
+}
+
+#[test]
 fn response_text_fixtures() {
     let dir = repo_root().join("tests/golden/response_text");
     let prefer: Value =
