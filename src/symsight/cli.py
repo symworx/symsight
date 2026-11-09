@@ -102,7 +102,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # setup
     setup = sub.add_parser("setup", help="Save the model and base URL for this project")
-    setup.add_argument("--local", action="store_true", help="Use a localhost OpenAI-compatible model")
+    setup.add_argument(
+        "--local",
+        action="store_true",
+        help="Use a localhost OpenAI-compatible model",
+    )
     setup.add_argument("--remote", action="store_true", help="Use the hosted xAI API")
     setup.add_argument(
         "--base-url",

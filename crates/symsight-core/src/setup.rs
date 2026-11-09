@@ -12,9 +12,7 @@ use serde_json::Value;
 
 use crate::config::{save_project_config, AppConfig};
 use crate::error::SetupError;
-use crate::llm::{
-    blocking_client, is_loopback_base_url, redact_secrets, validate_base_url,
-};
+use crate::llm::{blocking_client, is_loopback_base_url, redact_secrets, validate_base_url};
 
 const MODEL_LIST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -96,9 +94,9 @@ pub fn list_model_ids(base_url: &str) -> Result<Vec<String>, SetupError> {
         .send()
         .map_err(|err| SetupError::Message(redact_secrets(&err.to_string())))?;
     let status = response.status();
-    let value: Value = response.json().map_err(|err| {
-        SetupError::Message(redact_secrets(&format!("status {status}: {err}")))
-    })?;
+    let value: Value = response
+        .json()
+        .map_err(|err| SetupError::Message(redact_secrets(&format!("status {status}: {err}"))))?;
     if !status.is_success() {
         return Err(SetupError::Message(redact_secrets(&format!(
             "status {status}: {value}"
@@ -169,13 +167,12 @@ fn upsert_env_key(path: &Path, key: &str) -> std::io::Result<()> {
     };
     let updated = rewrite_env(&text, key);
     if existed {
-        fs::write(path, updated)
-    } else {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        write_new_private(path, &updated)
+        return fs::write(path, updated);
     }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_new_private(path, &updated)
 }
 
 fn rewrite_env(text: &str, key: &str) -> String {
@@ -224,22 +221,21 @@ fn format_env_value(key: &str) -> String {
     }
 }
 
+#[cfg(unix)]
 fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(text.as_bytes())?;
-        return Ok(());
-    }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, text)
-    }
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> {
+    fs::write(path, text)
 }
 
 #[cfg(test)]
@@ -278,10 +274,7 @@ mod tests {
         let openai = json!({"data": [{"id": "llama3.2"}, {"id": "mistral"}]});
         assert_eq!(parse_model_ids(&openai), vec!["llama3.2", "mistral"]);
         let ollama = json!({"models": [{"name": "llama3.2:latest"}, {"model": "phi3"}]});
-        assert_eq!(
-            parse_model_ids(&ollama),
-            vec!["llama3.2:latest", "phi3"]
-        );
+        assert_eq!(parse_model_ids(&ollama), vec!["llama3.2:latest", "phi3"]);
         let empty_data = json!({"data": [], "models": [{"name": "fallback"}]});
         assert_eq!(parse_model_ids(&empty_data), vec!["fallback"]);
     }
@@ -393,7 +386,10 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(local_remote.to_string().contains("localhost"), "{local_remote}");
+        assert!(
+            local_remote.to_string().contains("localhost"),
+            "{local_remote}"
+        );
 
         let remote_local = apply_setup(
             &cfg(&root),
@@ -420,7 +416,10 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(with_key.to_string().contains("does not take an API key"), "{with_key}");
+        assert!(
+            with_key.to_string().contains("does not take an API key"),
+            "{with_key}"
+        );
         assert!(!root.join(".symsight.toml").exists());
         assert!(!root.join(".env").exists());
     }

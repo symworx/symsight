@@ -380,7 +380,6 @@ fn denied_context_file_does_not_call_the_model() {
     assert_eq!(client.call_count(), 0);
 }
 
-#[test]
 fn local_cfg(root: &std::path::Path) -> AppConfig {
     let mut cfg = test_cfg(root);
     cfg.base_url = "http://127.0.0.1:11434/v1".into();

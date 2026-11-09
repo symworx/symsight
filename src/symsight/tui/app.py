@@ -266,12 +266,15 @@ class SettingsScreen(ModalScreen[bool]):
         brand = str(self.query_one("#set-brand", Select).value)
         model = self.query_one("#set-model", Input).value.strip()
         base_url = self.query_one("#set-base-url", Input).value.strip()
+        def under_root(path: Path) -> Path:
+            if path.is_absolute():
+                return path
+            return (self.cfg.project_root / path).resolve()
+
         update: dict[str, object] = {
-            "drafts_dir": drafts if drafts.is_absolute() else (self.cfg.project_root / drafts).resolve(),
-            "final_dir": final if final.is_absolute() else (self.cfg.project_root / final).resolve(),
-            "brands_dir": brands_dir
-            if brands_dir.is_absolute()
-            else (self.cfg.project_root / brands_dir).resolve(),
+            "drafts_dir": under_root(drafts),
+            "final_dir": under_root(final),
+            "brands_dir": under_root(brands_dir),
             "active_brand": brand,
         }
         if model:

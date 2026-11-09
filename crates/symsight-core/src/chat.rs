@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use crate::error::LlmError;
 use crate::llm::{
     blocking_client, is_loopback_base_url, redact_secrets, validate_base_url, CompletionRequest,
-    FunctionTool, ModelTurn, ToolCall, ToolResult, HTTP_TIMEOUT_SECS,
+    FunctionTool, LlmSession, ModelTurn, ToolCall, ToolResult, HTTP_TIMEOUT_SECS,
 };
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(HTTP_TIMEOUT_SECS);
@@ -77,7 +77,7 @@ impl LocalChatSession {
     }
 }
 
-impl crate::llm::LlmSession for LocalChatSession {
+impl LlmSession for LocalChatSession {
     fn complete(
         &mut self,
         req: &CompletionRequest,
@@ -368,20 +368,25 @@ mod tests {
 
     #[test]
     fn new_rejects_a_remote_base_url() {
-        let err = LocalChatSession::new("k", "https://api.x.ai/v1").unwrap_err();
+        let Err(err) = LocalChatSession::new("k", "https://api.x.ai/v1") else {
+            panic!("remote url must fail");
+        };
         assert!(err.to_string().contains("localhost"), "{err}");
     }
 
     #[test]
     fn resume_without_a_turn_errors() {
         let mut session = LocalChatSession::new("", "http://127.0.0.1:9/v1").unwrap();
-        let err = session.resume(&[]).unwrap_err();
+        let Err(err) = session.resume(&[]) else {
+            panic!("resume with no transcript must fail");
+        };
         assert!(err.to_string().contains("no response to resume"), "{err}");
     }
 
     #[test]
     fn complete_posts_chat_completions_and_skips_auth_when_the_key_is_empty() {
-        let (base, handle) = serve_once(r#"{"choices":[{"message":{"role":"assistant","content":"TITLE: Hi"}}]}"#);
+        let (base, handle) =
+            serve_once(r#"{"choices":[{"message":{"role":"assistant","content":"TITLE: Hi"}}]}"#);
         let mut session = LocalChatSession::new("  ", &base).unwrap();
         let turn = session
             .complete(
@@ -399,7 +404,10 @@ mod tests {
         assert!(raw.contains("POST /v1/chat/completions"), "{raw}");
         assert!(!raw.to_ascii_lowercase().contains("authorization"), "{raw}");
         assert!(!raw.contains("web_search"), "{raw}");
-        assert!(raw.contains("\"model\":\"llama\"") || raw.contains("\"model\": \"llama\""), "{raw}");
+        assert!(
+            raw.contains("\"model\":\"llama\"") || raw.contains("\"model\": \"llama\""),
+            "{raw}"
+        );
     }
 
     #[test]
@@ -419,7 +427,8 @@ mod tests {
             .unwrap();
         let raw = handle.join().unwrap();
         assert!(
-            raw.to_ascii_lowercase().contains("authorization: bearer local-test-key"),
+            raw.to_ascii_lowercase()
+                .contains("authorization: bearer local-test-key"),
             "{raw}"
         );
     }

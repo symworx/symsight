@@ -50,12 +50,12 @@ pub use llm::{
     FunctionTool, LlmClient, LlmSession, ModelTurn, OneShotSession, ScriptedClient,
     ScriptedSession, ToolCall, ToolResult, XaiClient,
 };
-pub use setup::{apply_setup, list_model_ids, SetupReport, SetupRequest};
 pub use models::{
     ArticleFormatSpec, Brand, ContentFormat, Draft, DraftMeta, FormatSpecs, FrontValue,
     GenerateRequest, ImageSpec, SocialFormatSpec, ToneSpec, TypeSpec,
 };
 pub use prompts::{length_rewrite_prompt, safe_format, system_prompt, user_prompt, utc_today};
+pub use setup::{apply_setup, list_model_ids, SetupReport, SetupRequest};
 pub use textutil::{
     char_count, clean_body, extract_social_text, extract_title_body, is_plausible_title,
     is_safe_path_component, slugify, word_count,

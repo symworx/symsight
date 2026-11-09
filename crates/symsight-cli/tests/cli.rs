@@ -298,15 +298,18 @@ fn execute_setup_local_and_remote() {
     .unwrap();
     assert_eq!(symsight_cli::execute(both), 1);
 
-    let missing_model = Cli::try_parse_from([
-        "symsight",
-        "--config-root",
-        root.to_str().unwrap(),
-        "setup",
-        "--local",
-    ])
-    .unwrap();
-    assert_eq!(symsight_cli::execute(missing_model), 1);
+    // A tty would prompt for a model id. Only the non-interactive path is asserted here.
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        let missing_model = Cli::try_parse_from([
+            "symsight",
+            "--config-root",
+            root.to_str().unwrap(),
+            "setup",
+            "--local",
+        ])
+        .unwrap();
+        assert_eq!(symsight_cli::execute(missing_model), 1);
+    }
 }
 
 #[test]
